@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 自定义样式 */
+.scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  @apply bg-gray-100 rounded;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}
+
+/* 录制状态指示器动画 */
+.recording-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .5;
+  }
+}
+
+/* HTTP方法标签样式 */
+.method-get {
+  @apply bg-green-100 text-green-800;
+}
+
+.method-post {
+  @apply bg-blue-100 text-blue-800;
+}
+
+.method-put {
+  @apply bg-yellow-100 text-yellow-800;
+}
+
+.method-patch {
+  @apply bg-orange-100 text-orange-800;
+}
+
+.method-delete {
+  @apply bg-red-100 text-red-800;
+}
+
+.method-options {
+  @apply bg-gray-100 text-gray-800;
+}
+
+/* 状态码样式 */
+.status-success {
+  @apply text-green-600;
+}
+
+.status-client-error {
+  @apply text-yellow-600;
+}
+
+.status-server-error {
+  @apply text-red-600;
+}
+
+.status-info {
+  @apply text-blue-600;
+}
