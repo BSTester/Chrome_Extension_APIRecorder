@@ -4,7 +4,7 @@ import { FloatingWidget } from './floating-widget';
 class ContentScript {
   private currentPageInfo: PageInfo;
   private observer?: MutationObserver;
-  private floatingWidget?: FloatingWidget;
+  private floatingWidget: FloatingWidget | null = null;
   private lastRecordingState?: RecordingState;
 
   constructor() {
@@ -51,8 +51,8 @@ class ContentScript {
       data: this.currentPageInfo
     };
 
-    chrome.runtime.sendMessage(message).catch(error => {
-      console.debug('Failed to send page info:', error);
+    chrome.runtime.sendMessage(message).catch(() => {
+      // 忽略发送错误
     });
   }
 
@@ -183,24 +183,31 @@ class ContentScript {
     }
   }
 
-  // 新增的方法
+  // 新增的方法（优化：预创建但默认隐藏，首次状态广播时立即显示）
   private async initFloatingWidget() {
     try {
-      // 检查是否应该显示悬浮组件
       if (!this.shouldShowFloatingWidget()) {
         return;
       }
 
-      // 等待DOM完全加载
+      const createAndHide = () => {
+        if (!this.floatingWidget) {
+          this.createFloatingWidget();
+          // 预创建后默认隐藏，等待状态驱动显示（先通过 unknown 中转以避免 never 推断）
+          (this.floatingWidget as unknown as FloatingWidget | undefined)?.hide();
+        }
+      };
+
+      // 等待 DOM 完全加载后再预创建，避免布局抖动
       if (document.readyState !== 'complete') {
         window.addEventListener('load', () => {
-          this.createFloatingWidget();
+          createAndHide();
         });
       } else {
-        this.createFloatingWidget();
+        createAndHide();
       }
     } catch (error) {
-      console.debug('Failed to init floating widget:', error);
+      // 忽略初始化错误
     }
   }
 
@@ -215,7 +222,10 @@ class ContentScript {
     ];
 
     const url = window.location.href;
-    return !excludePatterns.some(pattern => pattern.test(url));
+    const isValidPage = !excludePatterns.some(pattern => pattern.test(url));
+    
+    // 总是显示浮窗，不检查配置
+    return isValidPage;
   }
 
   private createFloatingWidget() {
@@ -230,9 +240,13 @@ class ContentScript {
       // 如果已经有录制状态，更新显示
       if (this.lastRecordingState) {
         this.floatingWidget.updateState(this.lastRecordingState);
+        // 如果在录制中，确保显示
+        if (this.lastRecordingState.isRecording) {
+          this.floatingWidget.show();
+        }
       }
     } catch (error) {
-      console.debug('Failed to create floating widget:', error);
+      // 忽略创建错误
     }
   }
 
@@ -243,12 +257,27 @@ class ContentScript {
         this.handleRecordingStatusChanged(response.state);
       }
     } catch (error) {
-      console.debug('Failed to get initial state:', error);
+      // 忽略获取状态错误
     }
   }
 
   private handleRecordingStatusChanged(state: RecordingState) {
     this.lastRecordingState = state;
+    
+    // 根据录制状态控制悬浮窗显示
+    if (state.isRecording) {
+      // 开始录制时显示悬浮窗
+      if (!this.floatingWidget && this.shouldShowFloatingWidget()) {
+        this.createFloatingWidget();
+      } else if (this.floatingWidget) {
+        this.floatingWidget.show();
+      }
+    } else {
+      // 停止录制时隐藏悬浮窗
+      if (this.floatingWidget) {
+        this.floatingWidget.hide();
+      }
+    }
     
     if (this.floatingWidget) {
       this.floatingWidget.updateState(state);
@@ -256,10 +285,17 @@ class ContentScript {
   }
 
   private handleUpdateFloatingWidget(data: any) {
-    if (data.visible && !this.floatingWidget && this.shouldShowFloatingWidget()) {
-      this.createFloatingWidget();
-    } else if (!data.visible && this.floatingWidget) {
-      this.floatingWidget.hide();
+    // 根据录制状态决定是否显示悬浮窗
+    if (data.recordingState && data.recordingState.isRecording) {
+      if (!this.floatingWidget && this.shouldShowFloatingWidget()) {
+        this.createFloatingWidget();
+      } else if (this.floatingWidget) {
+        this.floatingWidget.show();
+      }
+    } else {
+      if (this.floatingWidget) {
+        this.floatingWidget.hide();
+      }
     }
 
     if (this.floatingWidget && data.recordingState) {
@@ -272,8 +308,8 @@ class ContentScript {
     chrome.runtime.sendMessage({
       type: 'FLOATING_WIDGET_ACTION',
       data
-    }).catch(error => {
-      console.debug('Failed to send floating widget action:', error);
+    }).catch(() => {
+      // 忽略发送错误
     });
   }
 }

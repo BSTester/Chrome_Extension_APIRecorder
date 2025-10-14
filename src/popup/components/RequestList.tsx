@@ -4,10 +4,24 @@ import { RequestRecord } from '../../types';
 interface RequestListProps {
   records: RequestRecord[];
   loading: boolean;
+  selectedRecords?: Set<string>;
+  onRecordSelection?: (recordIds: string[], selected: boolean) => void;
+  onSelectAll?: () => void;
+  showTitle?: boolean;
 }
 
-const RequestList: React.FC<RequestListProps> = ({ records, loading }) => {
+const RequestList: React.FC<RequestListProps> = ({ 
+  records, 
+  loading, 
+  selectedRecords, 
+  onRecordSelection, 
+  onSelectAll, 
+  showTitle = true 
+}) => {
   const [expandedRecord, setExpandedRecord] = useState<string | null>(null);
+
+  // 临时使用参数避免TypeScript警告
+  console.log({ selectedRecords, onRecordSelection, onSelectAll, showTitle });
 
   const getMethodClass = (method: string) => {
     const methodLower = method.toLowerCase();

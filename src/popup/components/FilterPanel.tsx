@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FilterOptions } from '../../types';
 
 interface FilterPanelProps {
@@ -19,6 +19,29 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
     domains: filterOptions?.domains ?? []
   }));
 
+  // 当 filterOptions 变化时更新本地状态
+  useEffect(() => {
+    if (filterOptions) {
+      setLocalFilters({
+        excludeStatic: filterOptions.excludeStatic,
+        ajaxOnly: filterOptions.ajaxOnly,
+        duplicateRemoval: filterOptions.duplicateRemoval,
+        minResponseTime: filterOptions.minResponseTime,
+        statusCodes: filterOptions.statusCodes,
+        domains: filterOptions.domains
+      });
+    }
+  }, [filterOptions]);
+
+  // 快速预设状态码组
+  const successCodes = [200, 201, 202, 204];
+  const errorCodes = [400, 401, 403, 404, 422, 500, 502, 503];
+  
+  // 检查是否包含所有成功状态码
+  const hasAllSuccessCodes = successCodes.every(code => localFilters.statusCodes.includes(code));
+  // 检查是否包含所有错误状态码
+  const hasAllErrorCodes = errorCodes.every(code => localFilters.statusCodes.includes(code));
+
   const [newDomain, setNewDomain] = useState('');
   const [newStatusCode, setNewStatusCode] = useState('');
 
@@ -26,6 +49,22 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
     const updated = { ...localFilters, [key]: value };
     setLocalFilters(updated);
     onUpdateFilters({ [key]: value });
+  };
+
+  // 处理快速预设状态码
+  const handleQuickPreset = (presetCodes: number[], isChecked: boolean) => {
+    let updatedCodes: number[];
+    
+    if (isChecked) {
+      // 添加预设状态码，去除重复
+      const newCodes = presetCodes.filter(code => !localFilters.statusCodes.includes(code));
+      updatedCodes = [...localFilters.statusCodes, ...newCodes].sort((a, b) => a - b);
+    } else {
+      // 移除预设状态码
+      updatedCodes = localFilters.statusCodes.filter(code => !presetCodes.includes(code));
+    }
+    
+    handleFilterChange('statusCodes', updatedCodes);
   };
 
   const addDomain = () => {
@@ -56,7 +95,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
   };
 
   return (
-    <div className="p-4 space-y-6 overflow-y-auto scrollbar-thin">
+    <div className="p-4 space-y-6 overflow-y-auto scrollbar-thin filter-panel">
       <h3 className="text-lg font-semibold text-gray-800">过滤选项</h3>
 
       {/* 基础过滤选项 */}
@@ -117,7 +156,8 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             min="0"
             value={localFilters.minResponseTime}
             onChange={(e) => handleFilterChange('minResponseTime', parseInt(e.target.value) || 0)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="px-2 py-0.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 leading-tight"
+            style={{ height: '1.75rem', width: '530px', flexShrink: 0 }}
             placeholder="0"
           />
         </div>
@@ -133,12 +173,14 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             value={newDomain}
             onChange={(e) => setNewDomain(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && addDomain()}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="px-2 py-0.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 leading-tight"
+            style={{ height: '1.75rem', width: '450px', flexShrink: 0 }}
             placeholder="example.com or *.example.com"
           />
           <button
             onClick={addDomain}
-            className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
+            className="px-2 py-0.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors leading-tight"
+            style={{ height: '1.75rem' }}
           >
             添加
           </button>
@@ -173,12 +215,14 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             value={newStatusCode}
             onChange={(e) => setNewStatusCode(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && addStatusCode()}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="px-2 py-0.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 leading-tight"
+            style={{ height: '1.75rem', width: '450px', flexShrink: 0 }}
             placeholder="200"
           />
           <button
             onClick={addStatusCode}
-            className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
+            className="px-2 py-0.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors leading-tight"
+            style={{ height: '1.75rem' }}
           >
             添加
           </button>
@@ -205,42 +249,34 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       <div className="space-y-3">
         <h4 className="text-sm font-medium text-gray-700">快速预设</h4>
         
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={() => {
-              const presets = {
-                excludeStatic: true,
-                ajaxOnly: true,
-                duplicateRemoval: false,
-                minResponseTime: 0,
-                statusCodes: [200, 201, 202, 204],
-                domains: []
-              };
-              setLocalFilters(presets);
-              onUpdateFilters(presets);
-            }}
-            className="px-3 py-2 bg-green-100 text-green-800 rounded-lg text-sm hover:bg-green-200 transition-colors"
-          >
-            成功请求
-          </button>
-          
-          <button
-            onClick={() => {
-              const presets = {
-                excludeStatic: true,
-                ajaxOnly: true,
-                duplicateRemoval: false,
-                minResponseTime: 0,
-                statusCodes: [400, 401, 403, 404, 422, 500, 502, 503],
-                domains: []
-              };
-              setLocalFilters(presets);
-              onUpdateFilters(presets);
-            }}
-            className="px-3 py-2 bg-red-100 text-red-800 rounded-lg text-sm hover:bg-red-200 transition-colors"
-          >
-            错误请求
-          </button>
+        <div className="space-y-3">
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={hasAllSuccessCodes}
+              onChange={(e) => handleQuickPreset(successCodes, e.target.checked)}
+              className="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500"
+            />
+            <div className="flex items-center space-x-2">
+              <span className="inline-block w-3 h-3 bg-green-500 rounded-full"></span>
+              <span className="text-sm font-medium text-gray-700">成功请求</span>
+              <span className="text-xs text-gray-500">(200, 201, 202, 204)</span>
+            </div>
+          </label>
+
+          <label className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              checked={hasAllErrorCodes}
+              onChange={(e) => handleQuickPreset(errorCodes, e.target.checked)}
+              className="w-4 h-4 text-red-600 rounded border-gray-300 focus:ring-red-500"
+            />
+            <div className="flex items-center space-x-2">
+              <span className="inline-block w-3 h-3 bg-red-500 rounded-full"></span>
+              <span className="text-sm font-medium text-gray-700">错误请求</span>
+              <span className="text-xs text-gray-500">(400, 401, 403, 404, 422, 500, 502, 503)</span>
+            </div>
+          </label>
         </div>
       </div>
     </div>

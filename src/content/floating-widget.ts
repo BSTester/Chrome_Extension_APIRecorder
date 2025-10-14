@@ -5,7 +5,8 @@ export class FloatingWidget {
   private isExpanded = false;
   private isDragging = false;
   private dragOffset = { x: 0, y: 0 };
-  private position = { x: 20, y: 20 }; // 默认位置：右上角
+  private position = { x: 0, y: 0 }; // 默认位置：右下角（将在init时计算）
+  private updateTimer?: number; // 添加内部定时器
   private state: RecordingState = {
     isRecording: false,
     isPaused: false,
@@ -25,10 +26,25 @@ export class FloatingWidget {
       const result = await chrome.storage.local.get(['floatingWidgetPosition']);
       if (result.floatingWidgetPosition) {
         this.position = result.floatingWidgetPosition;
+      } else {
+        // 设置默认位置为右下角
+        this.setDefaultPosition();
       }
     } catch (error) {
-      console.debug('Failed to load widget position:', error);
+      this.setDefaultPosition();
     }
+  }
+
+  private setDefaultPosition() {
+    // 计算右下角位置（预留一些边距）
+    const margin = 20;
+    const widgetWidth = 200; // 预估宽度
+    const widgetHeight = 100; // 预估高度
+    
+    this.position = {
+      x: window.innerWidth - widgetWidth - margin,
+      y: window.innerHeight - widgetHeight - margin
+    };
   }
 
   private async savePosition() {
@@ -37,7 +53,7 @@ export class FloatingWidget {
         floatingWidgetPosition: this.position
       });
     } catch (error) {
-      console.debug('Failed to save widget position:', error);
+      // 忽略保存错误
     }
   }
 
@@ -46,6 +62,7 @@ export class FloatingWidget {
     this.container = document.createElement('div');
     this.container.id = 'api-recorder-floating-widget';
     this.container.innerHTML = this.getWidgetHTML();
+
     
     // 添加样式
     this.addStyles();
@@ -74,8 +91,7 @@ export class FloatingWidget {
             </div>
           </div>
           <div class="action-buttons">
-            <button class="btn-toggle" data-action="toggle-recording">开始</button>
-            <button class="btn-popup" data-action="open-popup">详情</button>
+            <button class="btn-toggle large" data-action="toggle-recording">开始</button>
           </div>
         </div>
       </div>
@@ -205,6 +221,12 @@ export class FloatingWidget {
         border-color: #586069;
       }
 
+      /* 放大主切换按钮 */
+      #api-recorder-floating-widget .btn-toggle.large {
+        padding: 8px 12px;
+        font-size: 12px;
+      }
+
       #api-recorder-floating-widget .btn-toggle.recording {
         background: #28a745;
         color: white;
@@ -271,8 +293,7 @@ export class FloatingWidget {
     // 点击事件
     this.container.addEventListener('click', this.handleClick.bind(this));
 
-    // 双击事件
-    this.container.addEventListener('dblclick', this.handleDoubleClick.bind(this));
+    // 双击打开独立页已移除，避免误触导致跳转
 
     // 防止右键菜单
     this.container.addEventListener('contextmenu', (e) => {
@@ -334,19 +355,14 @@ export class FloatingWidget {
       case 'toggle-recording':
         this.toggleRecording();
         break;
-      case 'open-popup':
-        this.openPopup();
-        break;
+
     }
 
     e.preventDefault();
     e.stopPropagation();
   }
 
-  private handleDoubleClick(e: MouseEvent) {
-    this.openPopup();
-    e.preventDefault();
-  }
+
 
   private updatePosition() {
     if (!this.container) return;
@@ -376,23 +392,49 @@ export class FloatingWidget {
     });
   }
 
-  private openPopup() {
-    // 发送消息给background script打开弹窗
-    const message: Message = {
-      type: 'OPEN_POPUP'
-    };
 
-    chrome.runtime.sendMessage(message).catch(error => {
-      console.error('Failed to open popup:', error);
-    });
-  }
 
   public updateState(newState: RecordingState) {
     this.state = { ...newState };
-    this.updateDisplay();
+    this.updateUI();
+    
+    // 管理内部定时器
+    if (this.state.isRecording && !this.state.isPaused) {
+      this.startInternalTimer();
+    } else {
+      this.stopInternalTimer();
+    }
   }
 
-  private updateDisplay() {
+  private startInternalTimer() {
+    // 清除旧的定时器
+    this.stopInternalTimer();
+    
+    // 启动新的定时器，每秒更新一次UI
+    this.updateTimer = setInterval(() => {
+      if (this.state.isRecording && !this.state.isPaused && this.state.startTime) {
+        // 实时计算当前时长
+        const now = Date.now();
+        this.state.duration = now - this.state.startTime;
+        
+        // 只更新时长显示，不更新其他状态
+        const durationEl = this.container?.querySelector('.duration') as HTMLElement;
+        if (durationEl) {
+          durationEl.textContent = this.formatDuration(this.state.duration);
+        }
+      }
+    }, 1000) as any;
+  }
+
+  private stopInternalTimer() {
+    if (this.updateTimer) {
+      clearInterval(this.updateTimer);
+      this.updateTimer = undefined;
+      console.debug('FloatingWidget: Internal timer stopped');
+    }
+  }
+
+  private updateUI() {
     if (!this.container) return;
 
     // 更新录制指示器
@@ -471,16 +513,23 @@ export class FloatingWidget {
   public show() {
     if (this.container) {
       this.container.style.display = 'block';
+      // 确保位置正确
+      this.updatePosition();
     }
   }
 
   public hide() {
     if (this.container) {
       this.container.style.display = 'none';
+      // 停止内部定时器
+      this.stopInternalTimer();
     }
   }
 
   public destroy() {
+    // 停止内部定时器
+    this.stopInternalTimer();
+    
     if (this.container) {
       this.container.remove();
     }
@@ -507,5 +556,11 @@ export class FloatingWidget {
   public init() {
     // 监听窗口大小变化
     window.addEventListener('resize', this.handleResize.bind(this));
+    
+    // 如果没有保存的位置，设置默认位置
+    if (this.position.x === 0 && this.position.y === 0) {
+      this.setDefaultPosition();
+      this.updatePosition();
+    }
   }
 }

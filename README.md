@@ -1,26 +1,66 @@
-# API Recorder - Chrome扩展程序
+# Chrome Extension API Recorder
 
-一个强大的Chrome浏览器扩展，用于录制网页中的HTTP接口请求，并导出为OpenAPI 3.0规范文件。
+一个强大的Chrome扩展程序，用于录制、管理和导出API请求。
 
 ## 功能特性
 
-### 🎯 核心功能
-- **自动接口录制**：自动捕获和记录所有HTTP请求
-- **智能过滤系统**：排除静态资源，专注于业务接口
-- **OpenAPI导出**：生成符合OpenAPI 3.0规范的文档
-- **实时监控**：提供录制状态和请求统计信息
+- 🔍 **智能录制**: 自动捕获和记录HTTP请求
+- 📋 **请求管理**: 按分组组织和管理API请求
+- 🏷️ **标签系统**: 为请求添加自定义标签
+- 🔧 **过滤器**: 多维度过滤请求（域名、状态码、类型等）
+- 📤 **导出功能**: 支持导出OpenAPI规范文档
+- 🧪 **测试套件**: 创建和管理API测试套件
+- 🎯 **紧凑界面**: 优化的UI设计，节省屏幕空间
 
-### 🔧 高级功能
-- **请求去重**：基于URL模式和参数结构的智能去重
-- **数据本地化**：使用IndexedDB进行大容量数据存储
-- **参数推断**：自动推断请求参数和响应Schema
-- **多种导出格式**：支持YAML、JSON和原始数据格式
+## 快速开始
 
-### 🎨 用户界面
-- **现代化设计**：基于React和Tailwind CSS的响应式界面
-- **分页浏览**：高效处理大量请求数据
-- **详细信息**：查看完整的请求头、响应数据等
-- **过滤选项**：灵活的过滤和搜索功能
+### 安装依赖
+```bash
+npm install
+```
+
+### 开发模式
+```bash
+npm run dev
+```
+
+### 构建生产版本
+```bash
+npm run build
+```
+
+### 安装扩展
+1. 在Chrome中打开 `chrome://extensions/`
+2. 启用"开发者模式"
+3. 点击"加载已解压的扩展程序"
+4. 选择项目的 `dist` 目录
+
+## 项目结构
+
+```
+src/
+├── background/          # 后台脚本
+├── content/            # 内容脚本
+├── popup/              # 弹窗界面
+│   ├── components/     # React组件
+│   ├── hooks/         # 自定义Hooks
+│   └── styles/        # 样式文件
+├── services/          # 业务服务
+├── storage/           # 数据存储
+├── types/             # TypeScript类型定义
+└── utils/             # 工具函数
+```
+
+## 技术栈
+
+- **前端**: React + TypeScript + Tailwind CSS
+- **构建工具**: Vite
+- **存储**: Chrome Storage API
+- **通信**: Chrome Runtime API
+
+## 开发说明
+
+该项目使用现代前端技术栈构建，具有响应式设计和紧凑的界面布局。支持多种过滤和导出选项，适合API开发和测试场景。
 
 ## 安装方法
 
@@ -104,7 +144,7 @@
 - **样式框架**：Tailwind CSS
 - **构建工具**：Vite
 - **存储**：Chrome Extension Storage API + IndexedDB
-- **规范支持**：OpenAPI 3.0
+- **规范支持**：OpenAPI 2.0/3.0
 
 ### 架构组件
 - **Service Worker**：后台请求监听和数据处理
@@ -214,6 +254,6 @@ npm run lint
 ### v1.0.0 (2024-09-25)
 - 初始版本发布
 - 支持HTTP请求录制
-- OpenAPI 3.0文档导出
+- OpenAPI文档导出
 - React用户界面
 - 智能过滤系统

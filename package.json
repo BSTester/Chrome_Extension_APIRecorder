@@ -1,11 +1,12 @@
 {
   "name": "chrome-ext-openapi",
   "version": "1.0.0",
-  "description": "Chrome extension for recording HTTP requests and exporting as OpenAPI 3.0 specification",
+  "description": "Chrome extension for recording HTTP requests and exporting as OpenAPI specification",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:ext": "npm run build && powershell -Command \"Copy-Item public\\manifest.json dist\\ -Force; robocopy public\\icons dist\\icons /E /NP /NFL /NDL; if ($LASTEXITCODE -le 1) { exit 0 }\"",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0"

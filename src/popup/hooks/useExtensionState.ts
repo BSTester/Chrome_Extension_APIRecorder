@@ -5,7 +5,8 @@ import {
   FilterOptions, 
   Message, 
   OpenAPIGenerateOptions,
-  ExportResult 
+  OpenAPIV2GenerateOptions,
+  ExportResult
 } from '../../types';
 
 interface ExtensionState {
@@ -25,10 +26,15 @@ export const useExtensionState = () => {
     error: null
   });
 
-  // 发送消息到后台脚本
+  // 发送消息到后台脚本（带超时）
   const sendMessage = useCallback(async (message: Message): Promise<any> => {
     return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('通信超时：后台脚本可能未正确初始化'));
+      }, 10000); // 10秒超时
+      
       chrome.runtime.sendMessage(message, (response) => {
+        clearTimeout(timeout);
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
           return;
@@ -42,6 +48,17 @@ export const useExtensionState = () => {
       });
     });
   }, []);
+
+  // 获取已保存的过滤器配置
+  const getSavedFilters = useCallback(async () => {
+    try {
+      const response = await sendMessage({ type: 'GET_FILTERS' });
+      return response.filters as FilterOptions | null;
+    } catch (error) {
+      console.debug('Failed to get saved filters:', error);
+      return null;
+    }
+  }, [sendMessage]);
 
   // 获取录制状态
   const getRecordingState = useCallback(async () => {
@@ -70,9 +87,18 @@ export const useExtensionState = () => {
     try {
       setState(prev => ({ ...prev, loading: true, error: null }));
       const response = await sendMessage({ type: 'START_RECORDING' });
+      
+      // 获取最新记录数据以保证统计信息准确
+      const records = await getRecords();
+      const correctedState = {
+        ...response.state,
+        recordCount: records ? records.length : 0
+      };
+      
       setState(prev => ({ 
         ...prev, 
-        recordingState: response.state,
+        recordingState: correctedState,
+        records,
         loading: false 
       }));
     } catch (error) {
@@ -82,16 +108,25 @@ export const useExtensionState = () => {
         loading: false 
       }));
     }
-  }, [sendMessage]);
+  }, [sendMessage, getRecords]);
 
   // 停止录制
   const stopRecording = useCallback(async () => {
     try {
       setState(prev => ({ ...prev, loading: true, error: null }));
       const response = await sendMessage({ type: 'STOP_RECORDING' });
+      
+      // 获取最新记录数据以保证统计信息准确
+      const records = await getRecords();
+      const correctedState = {
+        ...response.state,
+        recordCount: records ? records.length : 0
+      };
+      
       setState(prev => ({ 
         ...prev, 
-        recordingState: response.state,
+        recordingState: correctedState,
+        records,
         loading: false 
       }));
     } catch (error) {
@@ -101,16 +136,21 @@ export const useExtensionState = () => {
         loading: false 
       }));
     }
-  }, [sendMessage]);
+  }, [sendMessage, getRecords]);
 
   // 清空记录
   const clearRecords = useCallback(async () => {
     try {
       setState(prev => ({ ...prev, loading: true, error: null }));
       await sendMessage({ type: 'CLEAR_RECORDS' });
+      
+      // 获取更新后的状态
+      const updatedState = await getRecordingState();
+      
       setState(prev => ({ 
         ...prev, 
         records: [],
+        recordingState: updatedState,
         loading: false 
       }));
     } catch (error) {
@@ -120,7 +160,7 @@ export const useExtensionState = () => {
         loading: false 
       }));
     }
-  }, [sendMessage]);
+  }, [sendMessage, getRecordingState]);
 
   // 更新过滤选项
   const updateFilters = useCallback(async (filters: Partial<FilterOptions>) => {
@@ -153,9 +193,15 @@ export const useExtensionState = () => {
         getRecords()
       ]);
 
+      // 修正统计信息：使用实际记录数量
+      const correctedRecordingState = recordingState ? {
+        ...recordingState,
+        recordCount: records ? records.length : 0
+      } : recordingState;
+
       setState(prev => ({
         ...prev,
-        recordingState,
+        recordingState: correctedRecordingState,
         records,
         loading: false
       }));
@@ -170,29 +216,38 @@ export const useExtensionState = () => {
 
   // 导出数据
   const exportData = useCallback(async (
-    format: 'yaml' | 'json' | 'raw',
-    options?: OpenAPIGenerateOptions
+    format: 'yaml' | 'json' | 'openapi-v2' | 'raw',
+    options?: OpenAPIGenerateOptions | OpenAPIV2GenerateOptions
   ) => {
     try {
       if (!state.records || state.records.length === 0) {
         throw new Error('没有可导出的记录');
       }
 
-      const { OpenAPIExporter } = await import('../../export/openapi-exporter');
-      const exporter = new OpenAPIExporter();
-
       let result: ExportResult;
 
       switch (format) {
         case 'yaml':
-          result = await exporter.exportToOpenAPI(state.records, options!);
+        case 'json': {
+          const { OpenAPIExporter } = await import('../../exporters/openapi-exporter');
+          const exporter = new OpenAPIExporter();
+          result = format === 'yaml' 
+            ? await exporter.exportToOpenAPI(state.records, options as OpenAPIGenerateOptions)
+            : await exporter.exportToJSON(state.records, options as OpenAPIGenerateOptions);
           break;
-        case 'json':
-          result = await exporter.exportToJSON(state.records, options!);
+        }
+        case 'openapi-v2': {
+          const { OpenAPIV2Exporter } = await import('../../exporters/openapi-v2-exporter');
+          const exporter = new OpenAPIV2Exporter();
+          result = await exporter.exportToYAML(state.records, options as OpenAPIV2GenerateOptions);
           break;
-        case 'raw':
+        }
+        case 'raw': {
+          const { OpenAPIExporter } = await import('../../exporters/openapi-exporter');
+          const exporter = new OpenAPIExporter();
           result = await exporter.exportRawData(state.records);
           break;
+        }
         default:
           throw new Error('不支持的导出格式');
       }
@@ -226,12 +281,19 @@ export const useExtensionState = () => {
       try {
         setState(prev => ({ ...prev, loading: true, error: null }));
 
-        const [recordingState, records] = await Promise.all([
+        // 检查Chrome APIs是否可用
+        if (typeof chrome === 'undefined' || !chrome.runtime) {
+          throw new Error('Chrome APIs 不可用，请在扩展环境中运行');
+        }
+
+        // 并行获取状态、记录和过滤器配置
+        const [recordingState, records, savedFilters] = await Promise.all([
           getRecordingState(),
-          getRecords()
+          getRecords(),
+          getSavedFilters()
         ]);
 
-        // 加载过滤选项（使用默认值）
+        // 使用保存的过滤选项，如果没有则使用默认值
         const defaultFilters: FilterOptions = {
           excludeStatic: true,
           ajaxOnly: true,
@@ -240,25 +302,86 @@ export const useExtensionState = () => {
           statusCodes: [200, 201, 400, 404, 500],
           domains: []
         };
+        
+        const filterOptions = savedFilters || defaultFilters;
+
+        // 修正统计信息：使用实际记录数量而不是状态中的计数
+        const correctedRecordingState = recordingState ? {
+          ...recordingState,
+          recordCount: records ? records.length : 0
+        } : recordingState;
 
         setState({
-          recordingState,
+          recordingState: correctedRecordingState,
           records,
-          filterOptions: defaultFilters,
+          filterOptions,
           loading: false,
           error: null
         });
       } catch (error) {
+        console.error('Failed to initialize extension state:', error);
         setState(prev => ({
           ...prev,
           error: (error as Error).message,
-          loading: false
+          loading: false,
+          // 设置默认值以防止应用完全无法使用
+          recordingState: {
+            isRecording: false,
+            isPaused: false,
+            recordCount: 0,
+            duration: 0
+          },
+          records: [],
+          filterOptions: {
+            excludeStatic: true,
+            ajaxOnly: true,
+            duplicateRemoval: false,
+            minResponseTime: 0,
+            statusCodes: [200, 201, 400, 404, 500],
+            domains: []
+          }
         }));
       }
     };
 
     initializeData();
   }, [getRecordingState, getRecords]);
+
+  // 定期更新录制状态（仅在录制时）
+  useEffect(() => {
+    let intervalId: number | null = null;
+    
+    if (state.recordingState?.isRecording) {
+      intervalId = setInterval(async () => {
+        try {
+          const [newState, records] = await Promise.all([
+            getRecordingState(),
+            getRecords()
+          ]);
+          
+          // 修正统计信息
+          const correctedState = {
+            ...newState,
+            recordCount: records ? records.length : 0
+          };
+          
+          setState(prev => ({
+            ...prev,
+            recordingState: correctedState,
+            records
+          }));
+        } catch (error) {
+          console.debug('Failed to update recording state:', error);
+        }
+      }, 2000) as any; // 每2秒更新一次状态
+    }
+    
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [state.recordingState?.isRecording, getRecordingState, getRecords]);
 
   return {
     ...state,

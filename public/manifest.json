@@ -2,19 +2,19 @@
   "manifest_version": 3,
   "name": "API Recorder",
   "version": "1.0.0",
-  "description": "Record HTTP requests and export as OpenAPI 3.0 specification",
+  "description": "Record HTTP requests and export as OpenAPI specification",
   "permissions": [
     "webRequest",
     "storage",
     "activeTab",
-    "tabs"
+    "tabs",
+    "system.display"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
@@ -24,7 +24,6 @@
     }
   ],
   "action": {
-    "default_popup": "popup.html",
     "default_title": "API Recorder",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -41,7 +40,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["popup.html"],
+      "resources": ["index.html"],
       "matches": ["<all_urls>"]
     }
   ]

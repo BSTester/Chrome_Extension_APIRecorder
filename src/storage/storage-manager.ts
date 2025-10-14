@@ -7,7 +7,7 @@ import {
 
 export class StorageManager {
   private dbName = 'APIRecorderDB';
-  private dbVersion = 1;
+  private dbVersion = 2; // 增加版本号以支持新功能
   private db?: IDBDatabase;
 
   async init(): Promise<void> {
@@ -42,6 +42,15 @@ export class StorageManager {
           db.createObjectStore('config', { keyPath: 'key' });
         }
 
+        // 创建测试套件存储
+        if (!db.objectStoreNames.contains('testSuites')) {
+          const suiteStore = db.createObjectStore('testSuites', { keyPath: 'suiteId' });
+          suiteStore.createIndex('suiteName', 'suiteName', { unique: false });
+          suiteStore.createIndex('createdAt', 'createdAt', { unique: false });
+          suiteStore.createIndex('isActive', 'isActive', { unique: false });
+          suiteStore.createIndex('parentSuiteId', 'parentSuiteId', { unique: false });
+        }
+
         // 创建临时请求存储
         if (!db.objectStoreNames.contains('pending')) {
           db.createObjectStore('pending', { keyPath: 'requestId' });
@@ -63,6 +72,19 @@ export class StorageManager {
       const transaction = db.transaction(['records'], 'readwrite');
       const store = transaction.objectStore('records');
       const request = store.add(record);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
+  }
+
+  // 新增：保存或更新记录（避免重复键错误）
+  async saveOrUpdateRecord(record: RequestRecord): Promise<void> {
+    const db = await this.ensureDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['records'], 'readwrite');
+      const store = transaction.objectStore('records');
+      const request = store.put(record); // 使用 put 而不是 add
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve();
@@ -246,6 +268,84 @@ export class StorageManager {
         } else {
           resolve();
         }
+      };
+    });
+  }
+
+  // 测试套件管理方法
+  async saveTestSuite(suite: any): Promise<void> {
+    const db = await this.ensureDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['testSuites'], 'readwrite');
+      const store = transaction.objectStore('testSuites');
+      const request = store.put(suite);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
+  }
+
+  async getTestSuite(suiteId: string): Promise<any> {
+    const db = await this.ensureDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['testSuites'], 'readonly');
+      const store = transaction.objectStore('testSuites');
+      const request = store.get(suiteId);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result || null);
+    });
+  }
+
+  async getAllTestSuites(): Promise<any[]> {
+    const db = await this.ensureDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['testSuites'], 'readonly');
+      const store = transaction.objectStore('testSuites');
+      const request = store.getAll();
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+  }
+
+  async deleteTestSuite(suiteId: string): Promise<void> {
+    const db = await this.ensureDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['testSuites'], 'readwrite');
+      const store = transaction.objectStore('testSuites');
+      const request = store.delete(suiteId);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
+  }
+
+  async getTestSuitesByParent(parentSuiteId: string | null): Promise<any[]> {
+    const db = await this.ensureDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['testSuites'], 'readonly');
+      const store = transaction.objectStore('testSuites');
+      const index = store.index('parentSuiteId');
+      const request = index.getAll(parentSuiteId);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+  }
+
+  async getActiveSuite(): Promise<any> {
+    const db = await this.ensureDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['testSuites'], 'readonly');
+      const store = transaction.objectStore('testSuites');
+      const index = store.index('isActive');
+      const request = index.openCursor(IDBKeyRange.only(true));
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest).result;
+        resolve(cursor ? cursor.value : null);
       };
     });
   }
