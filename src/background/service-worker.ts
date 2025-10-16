@@ -1436,7 +1436,5 @@ class ServiceWorker {
 
 
 // 创建service worker实例
-const serviceWorker = new ServiceWorker();
+new ServiceWorker();
 
-// 导出到全局
-(globalThis as any).serviceWorker = serviceWorker;

@@ -1,4 +1,5 @@
 import React from 'react';
+import AuthButton from './AuthButton';
 
 const Header: React.FC = () => {
   return (
@@ -14,6 +15,9 @@ const Header: React.FC = () => {
             <h1 className="text-lg font-semibold">API Recorder</h1>
             <p className="text-blue-100 text-sm">HTTP 接口录制与导出工具</p>
           </div>
+        </div>
+        <div>
+          <AuthButton />
         </div>
       </div>
     </div>
