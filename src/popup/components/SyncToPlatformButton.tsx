@@ -155,6 +155,7 @@ const SyncToPlatformButton: React.FC<Props> = ({ records }) => {
     // 先构建每个分组中的 api
     recs.forEach((r) => {
       const { pathname, segments, query } = parseUrlParts(r.url);
+      const urlPath = pathname ? (pathname.startsWith('/') ? pathname : `/${pathname}`) : '';
       // 仅使用有效自定义标签作为分组；没有则归入“未分组”文件夹
       const tag = Array.isArray(r.customTags) && r.customTags.length > 0 ? isValidGroupTag(r.customTags[0]) : null;
       const groupName = tag || '未分组';
@@ -163,7 +164,7 @@ const SyncToPlatformButton: React.FC<Props> = ({ records }) => {
       const allHeaders = (r.requestParameters && r.requestParameters.allHeaders) || r.headers || {};
       const { mode, raw } = normalizeBody(r, allHeaders);
       const apiId = genId();
-      const apiName = `${(r.method || 'GET').toUpperCase()} /${pathname || ''}`;
+      const apiName = `${(r.method || 'GET').toUpperCase()} ${urlPath}`;
       const request = {
         auth: {
           type: 'noauth',
@@ -184,7 +185,7 @@ const SyncToPlatformButton: React.FC<Props> = ({ records }) => {
         header: toPlatformHeaders(allHeaders),
         query: toPlatformQuery(query),
         resful: toPlatformRestful(segments),
-        url: pathname,
+        url: urlPath,
         assert: [],
         regex: []
       };
@@ -211,7 +212,7 @@ const SyncToPlatformButton: React.FC<Props> = ({ records }) => {
         response: { success: { parameter: [], raw: '{}' }, error: { parameter: [], raw: '' } },
         mock: '{}',
         mock_url: '',
-        url: pathname,
+        url: urlPath,
         old_target_id: apiId,
         old_parent_id: parentId
       };
