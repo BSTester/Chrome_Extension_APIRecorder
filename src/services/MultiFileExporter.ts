@@ -1,6 +1,7 @@
 import { RequestRecord } from '../types';
 import { DomainDetector, DomainInfo } from './DomainDetector';
 import { AutoInfoGenerator, ApiInfo } from './AutoInfoGenerator';
+import GroupManager from './GroupManager';
 
 
 export interface ExportConfig {
@@ -238,10 +239,18 @@ export class MultiFileExporter {
         const path = url.pathname;
         const method = record.method.toLowerCase();
         
-        // 生成 tags：当按分组导出且无自定义标签时，默认归入“未分组”；否则可使用域名或 default
+        // 生成 tags：当按分组导出时，使用与GroupManager一致的分组匹配逻辑
         let recordTags: string[] = [];
         if (config.groupByTags) {
-          if (record.customTags && record.customTags.length > 0) {
+          // 优先通过recordGroupMapping匹配分组
+          const groupManager = GroupManager.getInstance();
+          const recordGroup = groupManager.getRecordGroup(record.id);
+          
+          if (recordGroup) {
+            recordTags = [recordGroup.name];
+            tags.add(recordGroup.name);
+          } else if (record.customTags && record.customTags.length > 0) {
+            // 如果没有recordGroupMapping，则通过customTags来匹配（兼容录制接口）
             recordTags = record.customTags;
             record.customTags.forEach(tag => tags.add(tag));
           } else {

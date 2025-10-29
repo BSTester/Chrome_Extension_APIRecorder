@@ -195,8 +195,10 @@ export class GroupManager {
       throw new Error('分组不存在');
     }
 
+    const oldGroupName = this.state.groups[groupIndex].name;
+
     // 如果更新名称，检查是否重复
-    if (updates.name && updates.name !== this.state.groups[groupIndex].name) {
+    if (updates.name && updates.name !== oldGroupName) {
       if (this.state.groups.some(group => group.name === updates.name && group.id !== groupId)) {
         throw new Error('分组名称已存在');
       }
@@ -208,6 +210,21 @@ export class GroupManager {
     };
 
     await this.saveState();
+
+    // 如果更新了分组名称，通知background script更新相关记录的customTags
+    if (updates.name && updates.name !== oldGroupName) {
+      try {
+        await chrome.runtime.sendMessage({
+          type: 'UPDATE_TAG_NAME',
+          data: { 
+            oldTagName: oldGroupName, 
+            newTagName: updates.name 
+          }
+        });
+      } catch (error) {
+        console.error('Failed to notify background script:', error);
+      }
+    }
   }
 
   /**
@@ -281,9 +298,22 @@ export class GroupManager {
 
     // 先处理所有自定义分组
     this.state.groups.forEach(group => {
-      const groupRecords = records.filter(record => 
-        record.customTags && record.customTags.includes(group.name)
-      );
+      const groupRecords = records.filter(record => {
+        // 优先通过 recordGroupMapping 来匹配记录和分组
+        const recordGroupId = this.state.recordGroupMapping.get(record.id);
+        if (recordGroupId === group.id) {
+          return true;
+        }
+        
+        // 如果没有recordGroupMapping，则通过customTags来匹配（兼容录制接口）
+        if (record.customTags && record.customTags.includes(group.name)) {
+          // 自动建立recordGroupMapping映射关系
+          this.state.recordGroupMapping.set(record.id, group.id);
+          return true;
+        }
+        
+        return false;
+      });
       
       groups.push({
         group,
@@ -314,19 +344,27 @@ export class GroupManager {
    */
   public async toggleGroupExpanded(groupId: string | null): Promise<void> {
     if (groupId === null) {
-      // 展开“未分组”，并收起其它所有分组
-      this.state.ungroupedExpanded = true;
-      this.state.groups.forEach(g => { g.isExpanded = false; });
+      // 切换“未分组”的展开/折叠；当展开未分组时收起其他分组，当折叠时保持其他分组状态不变
+      const newState = !this.state.ungroupedExpanded;
+      this.state.ungroupedExpanded = newState;
+      if (newState) {
+        this.state.groups.forEach(g => { g.isExpanded = false; });
+      }
       await this.saveState();
       return;
     }
-    
-    // 展开指定分组，并收起“未分组”和其它分组
+
+    // 切换指定分组的展开/折叠；当展开某分组时收起未分组与其它分组，当折叠时仅折叠该分组
     const group = this.state.groups.find(g => g.id === groupId);
     if (!group) return;
 
-    this.state.ungroupedExpanded = false;
-    this.state.groups.forEach(g => { g.isExpanded = g.id === groupId; });
+    const willExpand = !group.isExpanded;
+    if (willExpand) {
+      this.state.ungroupedExpanded = false;
+      this.state.groups.forEach(g => { g.isExpanded = g.id === groupId; });
+    } else {
+      group.isExpanded = false;
+    }
     await this.saveState();
   }
 

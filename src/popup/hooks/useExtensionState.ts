@@ -162,7 +162,6 @@ export const useExtensionState = () => {
     }
   }, [sendMessage, getRecordingState]);
 
-  // 更新过滤选项
   const updateFilters = useCallback(async (filters: Partial<FilterOptions>) => {
     try {
       await sendMessage({ 

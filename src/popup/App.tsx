@@ -179,6 +179,12 @@ const App: React.FC = () => {
     setSelectedRecords(new Set());
   };
 
+  // 处理记录删除后的回调
+  const handleRecordDeleted = () => {
+    // 触发重新获取记录数据以更新统计信息
+    refreshRecords();
+  };
+
   if (loading) {
     return (
       <div className="w-full h-full flex items-center justify-center">
@@ -283,6 +289,7 @@ const App: React.FC = () => {
               onSelectAll={handleSelectAll}
               showTitle={false}
               refreshTrigger={groupRefreshTrigger}
+              onRecordDeleted={handleRecordDeleted}
             />
           </div>
         )}

@@ -11,8 +11,10 @@ interface GroupedRequestListProps {
   onRecordSelection: (recordId: string, selected: boolean) => void;
   onBatchRecordSelection?: (recordIds: string[], selected: boolean) => void;
   onSelectAll: () => void;
+  onCopyUrl?: (url: string) => void;
   showTitle?: boolean;
   refreshTrigger?: number;
+  onRecordDeleted?: () => void; // 新增：记录删除后的回调
 }
 
 interface GroupSection {
@@ -28,9 +30,12 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
   onRecordSelection,
   onBatchRecordSelection,
   onSelectAll,
+  onCopyUrl,
   showTitle = true,
   refreshTrigger = 0,
+  onRecordDeleted,
 }) => {
+
   const [expandedRecord, setExpandedRecord] = useState<string | null>(null);
   const [groupSections, setGroupSections] = useState<GroupSection[]>([]);
   const [groupManager] = useState(() => GroupManager.getInstance());
@@ -200,9 +205,33 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
   const handleConfirmDelete = async () => {
     const { groupId } = deleteConfirmDialog;
     try {
+      // 先删除分组和记录
       await groupManager.deleteGroup(groupId);
+      
+      // 等待后台脚本处理删除操作
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('删除操作超时')), 10000);
+        chrome.runtime.sendMessage(
+          { type: 'DELETE_TAG_AND_RECORDS', data: { tagId: groupId } },
+          (resp) => {
+            clearTimeout(timeout);
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            if (resp?.success) resolve(); else reject(new Error(resp?.error || '删除失败'));
+          }
+        );
+      });
+      
+      // 重新加载状态和记录数据
       await groupManager.loadState();
-      setGroupSections(groupManager.organizeRecordsByGroups(records));
+      
+      // 通知父组件刷新记录数据
+      if (onRecordDeleted) {
+        onRecordDeleted();
+      }
+      
       setDeleteConfirmDialog({ isOpen: false, groupId: '', groupName: '', recordCount: 0 });
     } catch (e: any) {
       console.error('删除分组失败:', e);
@@ -218,13 +247,68 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
     setToast({ show: true, message, type });
   };
 
-  const handleCopySuccess = (type: string) => showToast(`${type}已复制到剪贴板`, 'success');
-
-  const handleStartEditGroup = (groupId: string, groupName: string, event: React.MouseEvent) => {
-    event.stopPropagation();
-    setEditingGroupId(groupId);
-    setEditingGroupName(groupName);
+  const getUrlPathWithoutOrigin = (url: string) => {
+    try {
+      const { pathname, search, hash } = new URL(url);
+      return `${pathname}${search}${hash}`;
+    } catch {
+      return url;
+    }
   };
+
+  const [recordDeleteConfirm, setRecordDeleteConfirm] = useState<{ isOpen: boolean; recordId: string | null; title: string }>(
+    { isOpen: false, recordId: null, title: '' }
+  );
+
+  const openRecordDelete = (recordId: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    const target = records.find(r => r.id === recordId);
+    const title = target ? getUrlPathWithoutOrigin(target.url) : '';
+    setRecordDeleteConfirm({ isOpen: true, recordId, title });
+  };
+
+  const confirmRecordDelete = async () => {
+    if (!recordDeleteConfirm.recordId) {
+      setRecordDeleteConfirm({ isOpen: false, recordId: null, title: '' });
+      return;
+    }
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('通信超时')), 10000);
+        chrome.runtime.sendMessage(
+          { type: 'DELETE_RECORDS', data: { recordIds: [recordDeleteConfirm.recordId] } },
+          (resp) => {
+            clearTimeout(timeout);
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            if (resp?.success) resolve(); else reject(new Error(resp?.error || '删除失败'));
+          }
+        );
+      });
+      // 本地移除该记录以立即反馈
+      setGroupSections(prev => prev.map(section => ({
+        ...section,
+        records: section.records.filter(r => r.id !== recordDeleteConfirm.recordId)
+      })));
+      showToast('接口已删除', 'success');
+      
+      // 通知父组件记录已删除，需要更新统计信息
+      if (onRecordDeleted) {
+        onRecordDeleted();
+      }
+    } catch (e: any) {
+      console.error('删除接口失败:', e);
+      showToast('删除接口失败，请稍后重试', 'error');
+    } finally {
+      setRecordDeleteConfirm({ isOpen: false, recordId: null, title: '' });
+    }
+  };
+
+  const cancelRecordDelete = () => setRecordDeleteConfirm({ isOpen: false, recordId: null, title: '' });
+
+  const handleCopySuccess = (type: string) => showToast(`${type}已复制到剪贴板`, 'success');
 
   const handleSaveEditGroup = async (groupId: string, event?: React.MouseEvent | React.KeyboardEvent) => {
     if (event) event.stopPropagation();
@@ -237,7 +321,21 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
       setEditingGroupId(null);
       setEditingGroupName('');
       await groupManager.loadState();
-      setGroupSections(groupManager.organizeRecordsByGroups(records));
+      
+      // 只更新分组名称，保持当前的展开状态
+      setGroupSections(prevSections => {
+        const newSections = groupManager.organizeRecordsByGroups(records);
+        // 保持原有的展开状态
+        return newSections.map(newSection => {
+          const prevSection = prevSections.find(s => 
+            (s.group?.id || null) === (newSection.group?.id || null)
+          );
+          return {
+            ...newSection,
+            isExpanded: prevSection ? prevSection.isExpanded : newSection.isExpanded
+          };
+        });
+      });
     } catch (e: any) {
       console.error('更新分组失败:', e);
       alert('更新分组失败: ' + e.message);
@@ -282,7 +380,7 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
               <div className={`flex items-center border-b ${isActive ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
                 {/* 左侧：展开/收起 + 选择 */}
                 <div
-                  className="flex items-center space-x-2 w-1/2 hover:bg-white/50 px-3 py-2 cursor-pointer"
+                  className="flex items-center space-x-2 w-1/2 hover:bg-white/50 px-3 py-2"
                   onClick={(e) => {
                     if (editingGroupId === section.group?.id) return;
                     handleExpandClick(section.group?.id || null, e);
@@ -362,16 +460,37 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
                       </button>
                     </div>
                   ) : (
-                    <span
-                      className={`font-medium truncate flex-1 ${isActive ? 'text-blue-700' : section.group ? 'text-gray-700' : 'text-gray-500'}`}
-                      onDoubleClick={(e) => {
-                        e.stopPropagation();
-                        if (section.group) handleStartEditGroup(section.group.id, section.group.name, e);
-                      }}
-                      title={section.group ? '双击编辑，单击展开/收起' : '单击展开/收起'}
-                    >
-                      {section.group ? section.group.name : '未分组'}
-                    </span>
+                    <div className="flex items-center flex-1">
+                      {/* 标题文字区域，只响应双击编辑 */}
+                      <span
+                        className={`font-medium truncate ${isActive ? 'text-blue-700' : section.group ? 'text-gray-700' : 'text-gray-500'}`}
+                        style={{ maxWidth: 'calc(100% - 80px)' }} // 预留空间给非文本区域
+                        onClick={(e) => {
+                          // 阻止单击事件冒泡到父容器，避免触发展开/折叠
+                          e.stopPropagation();
+                        }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          if (section.group) {
+                            setEditingGroupId(section.group.id);
+                            setEditingGroupName(section.group.name);
+                          }
+                        }}
+                        title={section.group ? '双击编辑分组名称' : '未分组'}
+                      >
+                        {section.group ? section.group.name : '未分组'}
+                      </span>
+                      
+                      {/* 右侧空白区域，点击触发展开/折叠 */}
+                      <div 
+                        className="flex-1 cursor-pointer h-full"
+                        onClick={(e) => {
+                          if (editingGroupId === section.group?.id) return;
+                          handleExpandClick(section.group?.id || null, e);
+                        }}
+                        title="单击展开/收起"
+                      />
+                    </div>
                   )}
                 </div>
 
@@ -438,9 +557,25 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
                                 title="选择/取消选择该接口"
                               />
 
-                              <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
+                              <button
+                                type="button"
+                                className="p-1 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onCopyUrl) {
+                                    onCopyUrl(record.url);
+                                  } else {
+                                    navigator.clipboard.writeText(record.url)
+                                      .then(() => showToast('完整URL已复制', 'success'))
+                                      .catch(() => showToast('复制失败', 'error'));
+                                  }
+                                }}
+                                title="复制完整URL"
+                              >
+                                <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              </button>
 
                               <span className={`px-2 py-1 text-xs font-medium rounded ${getMethodClass(record.method)}`}>
                                 {record.method}
@@ -455,6 +590,20 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
                               <span className={`font-medium ${getStatusClass(record.responseStatus)}`}>{record.responseStatus}</span>
                               <span>{formatResponseTime(record.responseTime)}</span>
                               <span>{formatTime(record.timestamp)}</span>
+                              <button
+                                type="button"
+                                className="flex items-center px-2 py-1 text-xs text-red-600 hover:text-red-800 transition-colors opacity-0 group-hover:opacity-100"
+                                onClick={(e) => openRecordDelete(record.id, e)}
+                                title="删除接口"
+                              >
+                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="3 6 5 6 21 6" />
+                                  <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                                  <path d="M10 11v6" />
+                                  <path d="M14 11v6" />
+                                  <path d="M15 6V4a2 2 0 00-2-2h-2a2 2 0 00-2 2v2" />
+                                </svg>
+                              </button>
                               <svg className={`w-3 h-3 transition-transform ${expandedRecord === record.id ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                               </svg>
@@ -473,29 +622,41 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
                                   <div className="text-gray-900 break-all">{record.pageUrl}</div>
                                 </div>
                                 <div>
-                                  <span className="text-gray-500">响应大小:</span>
-                                  <div className="text-gray-900">{formatSize(record.responseBody)}</div>
-                                </div>
-                                <div>
                                   <span className="text-gray-500">请求大小:</span>
                                   <div className="text-gray-900">{formatSize(record.requestBody)}</div>
                                 </div>
-                              </div>
-
-                              {record.customTags && record.customTags.length > 0 && (
                                 <div>
                                   <span className="text-gray-500 text-xs">分组:</span>
                                   <div className="flex flex-wrap gap-1 mt-1">
-                                    {record.customTags.map((tag, index) => (
-                                      <span key={index} className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">{tag}</span>
-                                    ))}
+                                    <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                                      {section.group ? section.group.name : '未分组'}
+                                    </span>
                                   </div>
+                                </div>
+                              </div>
+
+                              {record.responseBody && (
+                                <div>
+                                  <span className="text-gray-500">响应大小:</span>
+                                  <div className="text-gray-900">{formatSize(record.responseBody)}</div>
                                 </div>
                               )}
 
                               {Object.keys(record.headers).length > 0 && (
                                 <div>
-                                  <h5 className="text-xs font-medium text-gray-700 mb-2">请求头</h5>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <h5 className="text-xs font-medium text-gray-700">请求头</h5>
+                                    <button
+                                      className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const text = Object.entries(record.headers).map(([k, v]) => `${k}: ${v}`).join('\n');
+                                        navigator.clipboard.writeText(text).then(() => showToast('请求头已复制', 'success')).catch(() => showToast('复制失败', 'error'));
+                                      }}
+                                    >
+                                      复制请求头
+                                    </button>
+                                  </div>
                                   <div className="bg-white rounded border p-2 max-h-32 overflow-y-auto scrollbar-thin">
                                     <pre className="text-xs text-gray-600">
                                       {Object.entries(record.headers).map(([key, value]) => `${key}: ${value}`).join('\n')}
@@ -506,8 +667,20 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
 
                               {Object.keys(record.responseHeaders).length > 0 && (
                                 <div>
-                                  <h5 className="text-xs font-medium text-gray-700 mb-2">响应头</h5>
-                                  <div className="bg白 rounded border p-2 max-h-32 overflow-y-auto scrollbar-thin">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <h5 className="text-xs font-medium text-gray-700">响应头</h5>
+                                    <button
+                                      className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const text = Object.entries(record.responseHeaders).map(([k, v]) => `${k}: ${v}`).join('\n');
+                                        navigator.clipboard.writeText(text).then(() => showToast('响应头已复制', 'success')).catch(() => showToast('复制失败', 'error'));
+                                      }}
+                                    >
+                                      复制响应头
+                                    </button>
+                                  </div>
+                                  <div className="bg-white rounded border p-2 max-h-32 overflow-y-auto scrollbar-thin">
                                     <pre className="text-xs text-gray-600">
                                       {Object.entries(record.responseHeaders).map(([key, value]) => `${key}: ${value}`).join('\n')}
                                     </pre>
@@ -550,7 +723,19 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
 
                               {record.requestParameters?.json && (
                                 <div>
-                                  <h5 className="text-xs font-medium text-gray-700 mb-2">JSON Body</h5>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <h5 className="text-xs font-medium text-gray-700">JSON Body</h5>
+                                    <button
+                                      className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const text = JSON.stringify(record.requestParameters!.json, null, 2);
+                                        navigator.clipboard.writeText(text).then(() => showToast('请求体已复制', 'success')).catch(() => showToast('复制失败', 'error'));
+                                      }}
+                                    >
+                                      复制请求体
+                                    </button>
+                                  </div>
                                   <div className="bg-white rounded border p-2 max-h-32 overflow-y-auto scrollbar-thin">
                                     <pre className="text-xs text-gray-600">{JSON.stringify(record.requestParameters.json, null, 2)}</pre>
                                   </div>
@@ -559,7 +744,19 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
 
                               {record.requestBody && !record.requestParameters?.json && (
                                 <div>
-                                  <h5 className="text-xs font-medium text-gray-700 mb-2">请求体</h5>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <h5 className="text-xs font-medium text-gray-700">请求体</h5>
+                                    <button
+                                      className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const text = typeof record.requestBody === 'string' ? record.requestBody : JSON.stringify(record.requestBody, null, 2);
+                                        navigator.clipboard.writeText(text).then(() => showToast('请求体已复制', 'success')).catch(() => showToast('复制失败', 'error'));
+                                      }}
+                                    >
+                                      复制请求体
+                                    </button>
+                                  </div>
                                   <div className="bg-white rounded border p-2 max-h-32 overflow-y-auto scrollbar-thin">
                                     <pre className="text-xs text-gray-600">
                                       {typeof record.requestBody === 'string' ? record.requestBody : JSON.stringify(record.requestBody, null, 2)}
@@ -581,7 +778,6 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
 
                               <InlineReplay
                                 record={record}
-                                onCopyUrl={() => handleCopySuccess('URL')}
                                 onCopyJson={() => handleCopySuccess('JSON')}
                                 onCopy={(type) => handleCopySuccess(type)}
                               />
@@ -598,7 +794,7 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
         })}
       </div>
 
-      {/* 删除确认对话框 */}
+      {/* 删除分组确认对话框 */}
       <ConfirmDialog
         isOpen={deleteConfirmDialog.isOpen}
         title="删除分组"
@@ -612,6 +808,18 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
         confirmButtonClass="bg-red-600 hover:bg-red-700"
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
+      />
+
+      {/* 删除接口确认对话框 */}
+      <ConfirmDialog
+        isOpen={recordDeleteConfirm.isOpen}
+        title="删除接口"
+        message={`确定要删除接口：\n${recordDeleteConfirm.title}`}
+        confirmText="删除"
+        cancelText="取消"
+        confirmButtonClass="bg-red-600 hover:bg-red-700"
+        onConfirm={confirmRecordDelete}
+        onCancel={cancelRecordDelete}
       />
 
       {/* Toast提示 */}
@@ -628,10 +836,9 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
 
 const InlineReplay: React.FC<{
   record: RequestRecord;
-  onCopyUrl: () => void;
   onCopyJson: () => void;
   onCopy: (type: string) => void;
-}> = ({ record, onCopyUrl, onCopyJson, onCopy }) => {
+}> = ({ record, onCopyJson, onCopy }) => {
   const [show, setShow] = useState(false);
   const [headersText, setHeadersText] = useState(() => JSON.stringify(record.requestParameters?.allHeaders || record.headers || {}, null, 2));
   const [bodyText, setBodyText] = useState(() => JSON.stringify(record.requestParameters?.json ?? record.requestParameters?.form ?? record.requestBody ?? null, null, 2));
@@ -700,15 +907,6 @@ const InlineReplay: React.FC<{
   return (
     <div className="pt-2 border-t border-gray-200">
       <div className="flex flex-wrap items-center gap-2">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            navigator.clipboard.writeText(record.url).then(onCopyUrl).catch(() => {});
-          }}
-          className="px-3 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 transition-colors"
-        >
-          复制URL
-        </button>
         <button
           onClick={(e) => {
             e.stopPropagation();
