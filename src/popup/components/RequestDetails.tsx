@@ -459,7 +459,25 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ record, isOpen, onClose
               {/* Request Body */}
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-medium text-gray-900">请求体</h3>
+                  <div className="flex items-center space-x-2">
+                    <h3 className="text-sm font-medium text-gray-900">请求体</h3>
+                    <button
+                      onClick={() => {
+                        setShowReplayEditor(true);
+                        // 滚动到回放编辑区
+                        requestAnimationFrame(() => {
+                          const el = document.getElementById('replay-editor-anchor');
+                          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        });
+                      }}
+                      className="px-3 py-1 text-xs bg-blue-100 text-blue-800 hover:bg-blue-200 border border-blue-200 rounded transition-colors min-w-[88px]"
+                      title="编辑请求并回放"
+                      aria-label="编辑并回放"
+                    >
+                      编辑并回放
+                    </button>
+                  </div>
+                  <div className="flex-1"></div>
                   {(record.requestParameters?.json || record.requestParameters?.form || record.requestBody) && (
                     <button
                       onClick={() => {
@@ -486,21 +504,6 @@ const RequestDetails: React.FC<RequestDetailsProps> = ({ record, isOpen, onClose
                       )}
                     </button>
                   )}
-                  <button
-                    onClick={() => {
-                      setShowReplayEditor(true);
-                      // 滚动到回放编辑区
-                      requestAnimationFrame(() => {
-                        const el = document.getElementById('replay-editor-anchor');
-                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      });
-                    }}
-                    className="ml-2 px-3 py-1 text-xs bg-blue-100 text-blue-800 hover:bg-blue-200 border border-blue-200 rounded transition-colors min-w-[88px]"
-                    title="编辑请求并回放"
-                    aria-label="编辑并回放"
-                  >
-                    编辑并回放
-                  </button>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-4">
                   {record.requestParameters?.json ? (

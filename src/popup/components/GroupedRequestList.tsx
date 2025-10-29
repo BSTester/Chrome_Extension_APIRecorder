@@ -906,7 +906,17 @@ const InlineReplay: React.FC<{
 
   return (
     <div className="pt-2 border-t border-gray-200">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center justify-between">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setShow((s) => !s);
+          }}
+          className="px-3 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 transition-colors min-w-[88px]"
+          title="编辑请求并回放"
+        >
+          {show ? '收起回放' : '编辑并回放'}
+        </button>
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -915,16 +925,6 @@ const InlineReplay: React.FC<{
           className="px-3 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 transition-colors"
         >
           复制JSON
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShow((s) => !s);
-          }}
-          className="ml-1 px-3 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 transition-colors min-w-[88px]"
-          title="编辑请求并回放"
-        >
-          {show ? '收起回放' : '编辑并回放'}
         </button>
       </div>
 
