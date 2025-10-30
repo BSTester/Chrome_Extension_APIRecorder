@@ -14,6 +14,8 @@ export interface RequestRecord {
   responseTime: number;
   pageUrl: string;
   pageTitle?: string;
+  // 新增：自定义标题
+  customTitle?: string;
   // 新增：简化的请求参数信息
   requestParameters?: RequestParameters;
   // 保留必要的字段
@@ -128,7 +130,9 @@ export type MessageType =
   | 'DEDUPLICATE_RECORDS'
   | 'APPLY_ACTIVE_GROUP'
   | 'REPLAY_REQUEST'
-  | 'SAVE_REPLAY_RECORD';
+  | 'SAVE_REPLAY_RECORD'
+  // 新增：记录标题更新功能
+  | 'UPDATE_RECORD_TITLE';
 
 // 消息结构
 export interface Message {

@@ -392,6 +392,39 @@ class ServiceWorker {
           break;
         }
 
+        case 'UPDATE_RECORD_TITLE': {
+          try {
+            const { recordId, customTitle } = message.data || {};
+            if (!recordId) {
+              sendResponse({ success: false, error: '缺少记录ID' });
+              break;
+            }
+            
+            // 获取所有记录并找到目标记录
+            const allRecords = await this.storageManager.getAllRecords();
+            const recordIndex = allRecords.findIndex(r => r.id === recordId);
+            if (recordIndex === -1) {
+              sendResponse({ success: false, error: '记录不存在' });
+              break;
+            }
+            
+            // 更新记录的自定义标题
+            const updatedRecord = { ...allRecords[recordIndex], customTitle: customTitle || undefined };
+            allRecords[recordIndex] = updatedRecord;
+            
+            // 保存更新后的记录
+            await this.storageManager.saveOrUpdateRecord(updatedRecord);
+            
+            // 通知内容脚本更新
+            await this.notifyContentScript();
+            
+            sendResponse({ success: true });
+          } catch (e: any) {
+            sendResponse({ success: false, error: e?.message || '更新记录标题失败' });
+          }
+          break;
+        }
+
         default:
           sendResponse({ success: false, error: 'Unknown message type' });
       }

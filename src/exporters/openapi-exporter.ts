@@ -104,7 +104,7 @@ export class OpenAPIExporter {
 
   private generateOperation(record: RequestRecord): any {
     return {
-      summary: `${record.method} ${this.extractPath(record.url)}`,
+      summary: record.customTitle || `${record.method} ${this.extractPath(record.url)}`,
       description: `API endpoint recorded at ${new Date(record.timestamp).toISOString()}`,
       tags: this.generateOperationTags(record),
       responses: {

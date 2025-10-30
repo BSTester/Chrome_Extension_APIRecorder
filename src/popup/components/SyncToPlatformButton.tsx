@@ -164,7 +164,8 @@ const SyncToPlatformButton: React.FC<Props> = ({ records }) => {
       const allHeaders = (r.requestParameters && r.requestParameters.allHeaders) || r.headers || {};
       const { mode, raw } = normalizeBody(r, allHeaders);
       const apiId = genId();
-      const apiName = `${(r.method || 'GET').toUpperCase()} ${urlPath}`;
+      // 优先使用自定义标题，否则使用默认格式
+      const apiName = r.customTitle || `${(r.method || 'GET').toUpperCase()} ${urlPath}`;
       const request = {
         auth: {
           type: 'noauth',

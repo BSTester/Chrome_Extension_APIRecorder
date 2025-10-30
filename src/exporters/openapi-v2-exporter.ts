@@ -355,6 +355,11 @@ export class OpenAPIV2Exporter {
   }
 
   private generateOperationSummary(record: RequestRecord, method: string): string {
+    // 优先使用自定义标题
+    if (record.customTitle) {
+      return record.customTitle;
+    }
+    
     const path = this.extractPath(record.url);
     const segments = path.split('/').filter(Boolean);
     const resource = segments.length > 0 ? segments[segments.length - 1] : 'root';

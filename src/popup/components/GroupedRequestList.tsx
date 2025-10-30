@@ -41,6 +41,9 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
   const [groupManager] = useState(() => GroupManager.getInstance());
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingGroupName, setEditingGroupName] = useState('');
+  // 新增：记录标题编辑状态
+  const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
+  const [editingRecordTitle, setEditingRecordTitle] = useState('');
 
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{
     isOpen: boolean;
@@ -148,7 +151,7 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
       return sid === groupId ? { ...s, isExpanded: !s.isExpanded } : s;
     }));
 
-    // 同步到 GroupManager，维持“只展开一个”策略
+    // 同步到 GroupManager，维持"只展开一个"策略
     if (!currentSection.isExpanded) {
       for (const section of groupSections) {
         const sid = section.group?.id || null;
@@ -207,7 +210,7 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
     try {
       // 先删除分组和记录
       await groupManager.deleteGroup(groupId);
-      
+
       // 等待后台脚本处理删除操作
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('删除操作超时')), 10000);
@@ -223,15 +226,15 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
           }
         );
       });
-      
+
       // 重新加载状态和记录数据
       await groupManager.loadState();
-      
+
       // 通知父组件刷新记录数据
       if (onRecordDeleted) {
         onRecordDeleted();
       }
-      
+
       setDeleteConfirmDialog({ isOpen: false, groupId: '', groupName: '', recordCount: 0 });
     } catch (e: any) {
       console.error('删除分组失败:', e);
@@ -293,7 +296,7 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
         records: section.records.filter(r => r.id !== recordDeleteConfirm.recordId)
       })));
       showToast('接口已删除', 'success');
-      
+
       // 通知父组件记录已删除，需要更新统计信息
       if (onRecordDeleted) {
         onRecordDeleted();
@@ -321,13 +324,13 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
       setEditingGroupId(null);
       setEditingGroupName('');
       await groupManager.loadState();
-      
+
       // 只更新分组名称，保持当前的展开状态
       setGroupSections(prevSections => {
         const newSections = groupManager.organizeRecordsByGroups(records);
         // 保持原有的展开状态
         return newSections.map(newSection => {
-          const prevSection = prevSections.find(s => 
+          const prevSection = prevSections.find(s =>
             (s.group?.id || null) === (newSection.group?.id || null)
           );
           return {
@@ -346,6 +349,60 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
     event.stopPropagation();
     setEditingGroupId(null);
     setEditingGroupName('');
+  };
+
+  // 保存记录标题
+  const handleSaveRecordTitle = async (recordId: string) => {
+    if (!editingRecordTitle.trim()) {
+      // 如果标题为空，视为删除自定义标题
+      setEditingRecordId(null);
+      setEditingRecordTitle('');
+      return;
+    }
+
+    try {
+      // 发送消息到background script更新记录
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('通信超时')), 10000);
+        chrome.runtime.sendMessage(
+          { type: 'UPDATE_RECORD_TITLE', data: { recordId, customTitle: editingRecordTitle.trim() } },
+          (resp) => {
+            clearTimeout(timeout);
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            if (resp?.success) resolve(); else reject(new Error(resp?.error || '更新失败'));
+          }
+        );
+      });
+
+      // 本地更新状态以立即反馈
+      setGroupSections(prev => prev.map(section => ({
+        ...section,
+        records: section.records.map(record =>
+          record.id === recordId ? { ...record, customTitle: editingRecordTitle.trim() } : record
+        )
+      })));
+
+      setEditingRecordId(null);
+      setEditingRecordTitle('');
+      showToast('标题已更新', 'success');
+
+      // 通知父组件刷新数据，确保导出和同步时能获取到最新的标题
+      if (onRecordDeleted) {
+        onRecordDeleted();
+      }
+    } catch (e: any) {
+      console.error('更新标题失败:', e);
+      showToast('更新标题失败: ' + e.message, 'error');
+    }
+  };
+
+  // 取消编辑记录标题
+  const handleCancelEditRecordTitle = () => {
+    setEditingRecordId(null);
+    setEditingRecordTitle('');
   };
 
   if (loading) {
@@ -480,9 +537,9 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
                       >
                         {section.group ? section.group.name : '未分组'}
                       </span>
-                      
+
                       {/* 右侧空白区域，点击触发展开/折叠 */}
-                      <div 
+                      <div
                         className="flex-1 cursor-pointer h-full"
                         onClick={(e) => {
                           if (editingGroupId === section.group?.id) return;
@@ -581,9 +638,75 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
                                 {record.method}
                               </span>
 
-                              <span className="text-sm text-gray-900 truncate flex-1" title={record.url}>
-                                {formatUrl(record.url)}
-                              </span>
+                              {/* 修改标题显示部分 */}
+                              <div className="flex items-center flex-1 min-w-0">
+                                {editingRecordId === record.id ? (
+                                  <div className="flex items-center space-x-1 flex-1" onClick={(e) => e.stopPropagation()}>
+                                    <input
+                                      type="text"
+                                      value={editingRecordTitle}
+                                      onChange={(e) => setEditingRecordTitle(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        e.stopPropagation();
+                                        if (e.key === 'Enter') handleSaveRecordTitle(record.id);
+                                        else if (e.key === 'Escape') handleCancelEditRecordTitle();
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="flex-1 px-2 py-1 text-sm border border-blue-500 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                      autoFocus
+                                    />
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleSaveRecordTitle(record.id); }}
+                                      className="p-1 text-green-600 hover:bg-green-50 rounded flex-shrink-0"
+                                      title="保存"
+                                    >
+                                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                      </svg>
+                                    </button>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleCancelEditRecordTitle(); }}
+                                      className="p-1 text-gray-600 hover:bg-gray-100 rounded flex-shrink-0"
+                                      title="取消"
+                                    >
+                                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center flex-1">
+                                    {/* 标题文字区域，只响应双击编辑 */}
+                                    <span
+                                      className="text-sm text-gray-900 truncate"
+                                      style={{ maxWidth: 'calc(100% - 60px)' }} // 预留空间给非文本区域
+                                      onClick={(e) => {
+                                        // 阻止单击事件冒泡到父容器，避免触发展开/折叠
+                                        e.stopPropagation();
+                                      }}
+                                      onDoubleClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingRecordId(record.id);
+                                        setEditingRecordTitle(record.customTitle || formatUrl(record.url));
+                                      }}
+                                      title="双击编辑接口标题"
+                                    >
+                                      {record.customTitle || formatUrl(record.url)}
+                                    </span>
+
+                                    {/* 右侧空白区域，点击触发展开/折叠 */}
+                                    <div
+                                      className="flex-1 cursor-pointer h-full"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        // 点击空白区域触发折叠/展开
+                                        toggleExpanded(record.id);
+                                      }}
+                                      title="单击展开/收起详情"
+                                    />
+                                  </div>
+                                )}
+                              </div>
                             </div>
 
                             <div className="flex items-center space-x-2 text-xs text-gray-500">
@@ -920,7 +1043,7 @@ const InlineReplay: React.FC<{
         <button
           onClick={(e) => {
             e.stopPropagation();
-            navigator.clipboard.writeText(JSON.stringify(record, null, 2)).then(onCopyJson).catch(() => {});
+            navigator.clipboard.writeText(JSON.stringify(record, null, 2)).then(onCopyJson).catch(() => { });
           }}
           className="px-3 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 transition-colors"
         >
@@ -960,11 +1083,10 @@ const InlineReplay: React.FC<{
         {result && (
           <div className="bg-white border rounded p-3">
             <div className="flex items-center gap-3 mb-2">
-              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                result.status >= 200 && result.status < 300 ? 'bg-green-100 text-green-800' :
+              <span className={`px-2 py-0.5 rounded text-xs font-medium ${result.status >= 200 && result.status < 300 ? 'bg-green-100 text-green-800' :
                 result.status >= 400 ? 'bg-red-100 text-red-800' :
-                'bg-yellow-100 text-yellow-800'
-              }`}>{result.status}</span>
+                  'bg-yellow-100 text-yellow-800'
+                }`}>{result.status}</span>
               <span className="text-xs text-gray-600">耗时: {result.duration}ms</span>
               <span className="text-xs text-gray-600">时间: {new Date(result.timestamp).toLocaleString()}</span>
             </div>
@@ -976,7 +1098,7 @@ const InlineReplay: React.FC<{
                     e.stopPropagation();
                     const text = Object.entries(result.headers).map(([k, v]) => `${k}: ${v}`).join('\
 ');
-                    navigator.clipboard.writeText(text).then(() => onCopy('响应头')).catch(() => {});
+                    navigator.clipboard.writeText(text).then(() => onCopy('响应头')).catch(() => { });
                   }}
                   className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 transition-colors"
                 >
@@ -1006,7 +1128,7 @@ const InlineReplay: React.FC<{
                           navigator.clipboard
                             .writeText(JSON.stringify(json, null, 2))
                             .then(() => onCopy('响应JSON'))
-                            .catch(() => {});
+                            .catch(() => { });
                         }}
                         className="mt-2 px-2 py-1 bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors"
                       >
@@ -1026,7 +1148,7 @@ const InlineReplay: React.FC<{
                           navigator.clipboard
                             .writeText(String(result.bodySnippet ?? ''))
                             .then(() => onCopy('响应原文'))
-                            .catch(() => {});
+                            .catch(() => { });
                         }}
                         className="mt-2 px-2 py-1 bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors"
                       >

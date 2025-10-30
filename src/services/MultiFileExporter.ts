@@ -275,7 +275,7 @@ export class MultiFileExporter {
         // 构建操作对象
         const operation: any = {
           tags: recordTags,
-          summary: `${method.toUpperCase()} ${path}`,
+          summary: record.customTitle || `${method.toUpperCase()} ${path}`,
           operationId: `${method}${path.replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}`,
           responses: {
             [record.responseStatus]: {
