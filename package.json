@@ -1,6 +1,6 @@
 {
   "name": "chrome-ext-openapi",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Chrome extension for recording HTTP requests and exporting as OpenAPI specification",
   "type": "module",
   "scripts": {

@@ -3,6 +3,8 @@ import { RequestRecord, CustomTag } from '../../types';
 import { GroupManager } from '../../services/GroupManager';
 import ConfirmDialog from './ConfirmDialog';
 import Toast from './Toast';
+import JsonEditor from './JsonEditor';
+import JsonViewer from './JsonViewer';
 
 interface GroupedRequestListProps {
   records: RequestRecord[];
@@ -238,7 +240,7 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
       setDeleteConfirmDialog({ isOpen: false, groupId: '', groupName: '', recordCount: 0 });
     } catch (e: any) {
       console.error('删除分组失败:', e);
-      alert('删除分组失败: ' + e.message);
+      showToast('删除分组失败: ' + e.message, 'error');
     }
   };
 
@@ -316,7 +318,7 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
   const handleSaveEditGroup = async (groupId: string, event?: React.MouseEvent | React.KeyboardEvent) => {
     if (event) event.stopPropagation();
     if (!editingGroupName.trim()) {
-      alert('分组名称不能为空');
+      showToast('分组名称不能为空', 'error');
       return;
     }
     try {
@@ -341,7 +343,7 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
       });
     } catch (e: any) {
       console.error('更新分组失败:', e);
-      alert('更新分组失败: ' + e.message);
+      showToast('更新分组失败: ' + e.message, 'error');
     }
   };
 
@@ -859,9 +861,11 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
                                       复制请求体
                                     </button>
                                   </div>
-                                  <div className="bg-white rounded border p-2 max-h-32 overflow-y-auto scrollbar-thin">
-                                    <pre className="text-xs text-gray-600">{JSON.stringify(record.requestParameters.json, null, 2)}</pre>
-                                  </div>
+                                  <JsonViewer
+                                    value={JSON.stringify(record.requestParameters.json, null, 2)}
+                                    placeholder="无请求体"
+                                    instanceId={`request-json-${record.id}`}
+                                  />
                                 </div>
                               )}
 
@@ -891,11 +895,11 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
                               {record.responseBody && (
                                 <div>
                                   <h5 className="text-xs font-medium text-gray-700 mb-2">响应体</h5>
-                                  <div className="bg-white rounded border p-2 max-h-32 overflow-y-auto scrollbar-thin">
-                                    <pre className="text-xs text-gray-600">
-                                      {typeof record.responseBody === 'string' ? record.responseBody : JSON.stringify(record.responseBody, null, 2)}
-                                    </pre>
-                                  </div>
+                                  <JsonViewer
+                                    value={typeof record.responseBody === 'string' ? record.responseBody : JSON.stringify(record.responseBody, null, 2)}
+                                    placeholder="无响应体"
+                                    instanceId={`response-body-${record.id}`}
+                                  />
                                 </div>
                               )}
 
@@ -963,49 +967,100 @@ const InlineReplay: React.FC<{
   onCopy: (type: string) => void;
 }> = ({ record, onCopyJson, onCopy }) => {
   const [show, setShow] = useState(false);
-  const [headersText, setHeadersText] = useState(() => JSON.stringify(record.requestParameters?.allHeaders || record.headers || {}, null, 2));
-  const [bodyText, setBodyText] = useState(() => JSON.stringify(record.requestParameters?.json ?? record.requestParameters?.form ?? record.requestBody ?? null, null, 2));
+
+  // 判断请求体类型
+  const bodyType = record.requestParameters?.json ? 'json'
+    : record.requestParameters?.form ? 'form'
+      : record.requestBody ? 'raw'
+        : 'none';
+
+  // Query 参数（key-value 格式）
+  const [queryParams, setQueryParams] = useState<Array<{ key: string; value: string }>>(() => {
+    const query = record.requestParameters?.query || {};
+    return Object.entries(query).map(([key, value]) => ({ key, value: String(value) }));
+  });
+
+  // Headers（key-value 格式）
+  const [headerParams, setHeaderParams] = useState<Array<{ key: string; value: string }>>(() => {
+    const headers = record.requestParameters?.allHeaders || record.headers || {};
+    return Object.entries(headers).map(([key, value]) => ({ key, value: String(value) }));
+  });
+
+  // Body - JSON 格式
+  const [bodyJsonText, setBodyJsonText] = useState(() => {
+    if (bodyType === 'json') {
+      return JSON.stringify(record.requestParameters?.json, null, 2);
+    }
+    return '{}';
+  });
+
+  // Body - Form 格式（key-value）
+  const [bodyFormParams, setBodyFormParams] = useState<Array<{ key: string; value: string }>>(() => {
+    if (bodyType === 'form') {
+      const form = record.requestParameters?.form || {};
+      return Object.entries(form).map(([key, value]) => ({ key, value: String(value) }));
+    }
+    return [];
+  });
+
+  // Body - Raw 格式
+  const [bodyRawText, setBodyRawText] = useState(() => {
+    if (bodyType === 'raw') {
+      return typeof record.requestBody === 'string' ? record.requestBody : JSON.stringify(record.requestBody, null, 2);
+    }
+    return '';
+  });
+
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<{ status: number; headers: Record<string, string>; bodySnippet: string; duration: number; timestamp: number } | null>(null);
-
-  // 递归渲染 JSON 为树形结构（使用原生 details/summary）
-  const renderJson = (val: any, level: number = 0): JSX.Element => {
-    if (val !== null && typeof val === 'object') {
-      const isArray = Array.isArray(val);
-      const entries = isArray ? (val as any[]).map((v: any, i: number) => [i, v]) : Object.entries(val);
-      return (
-        <div style={{ paddingLeft: Math.min(level, 4) * 12 }}>
-          {entries.map(([k, v]: any, idx: number) => (
-            <details key={idx} open={level < 1} className="mb-1">
-              <summary className="cursor-pointer text-gray-700">
-                <span className="font-mono">{String(k)}</span>
-                {typeof v === 'object' ? (
-                  <span className="text-gray-400"> {Array.isArray(v) ? '[...]' : '{...}'}</span>
-                ) : (
-                  <span className="text-gray-600">: {String(v)}</span>
-                )}
-              </summary>
-              <div className="pl-2">{renderJson(v, level + 1)}</div>
-            </details>
-          ))}
-        </div>
-      );
-    }
-    return <span className="font-mono text-gray-700">{String(val)}</span>;
-  };
 
   const doReplay = async () => {
     try {
       setLoading(true);
       setErr(null);
       setResult(null);
-      const headers = headersText.trim() ? JSON.parse(headersText) : {};
-      const body = bodyText.trim() ? JSON.parse(bodyText) : null;
+
+      // 构建请求头（从 key-value 转为对象）
+      const headers: Record<string, string> = {};
+      headerParams.forEach(({ key, value }) => {
+        if (key.trim()) headers[key.trim()] = value;
+      });
+
+      // 构建请求体
+      let body: any = null;
+      if (bodyType === 'json') {
+        body = bodyJsonText.trim() ? JSON.parse(bodyJsonText) : null;
+      } else if (bodyType === 'form') {
+        body = {};
+        bodyFormParams.forEach(({ key, value }) => {
+          if (key.trim()) body[key.trim()] = value;
+        });
+      } else if (bodyType === 'raw') {
+        body = bodyRawText.trim() || null;
+      }
+
+      // 重建 URL（添加 query 参数）
+      let finalUrl = record.url;
+      try {
+        const urlObj = new URL(record.url);
+        // 清空原有 query 参数
+        urlObj.search = '';
+        // 添加编辑后的 query 参数
+        queryParams.forEach(({ key, value }) => {
+          if (key.trim()) {
+            urlObj.searchParams.append(key.trim(), value);
+          }
+        });
+        finalUrl = urlObj.toString();
+      } catch (e) {
+        console.error('URL 解析失败，使用原始 URL:', e);
+      }
+
       const res = await new Promise<any>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('通信超时')), 15000);
         chrome.runtime.sendMessage(
-          { type: 'REPLAY_REQUEST', data: { method: record.method, url: record.url, headers, body } },
+          { type: 'REPLAY_REQUEST', data: { method: record.method, url: finalUrl, headers, body } },
           (r) => {
             clearTimeout(timeout);
             if (chrome.runtime.lastError) {
@@ -1052,24 +1107,200 @@ const InlineReplay: React.FC<{
       </div>
 
       <div className={`${show ? '' : 'hidden'} mt-3 space-y-3`}>
+        {/* Query 参数 */}
+        {queryParams.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs text-gray-600">Query 参数</label>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setQueryParams([...queryParams, { key: '', value: '' }]);
+                }}
+                className="text-xs text-blue-600 hover:text-blue-800"
+              >
+                + 添加
+              </button>
+            </div>
+            <div className="space-y-1 max-h-32 overflow-y-auto border rounded p-2 bg-gray-50">
+              {queryParams.map((param, idx) => (
+                <div key={idx} className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    value={param.key}
+                    onChange={(e) => {
+                      const newParams = [...queryParams];
+                      newParams[idx].key = e.target.value;
+                      setQueryParams(newParams);
+                    }}
+                    placeholder="key"
+                    className="flex-1 px-2 py-1 text-xs border rounded"
+                  />
+                  <input
+                    type="text"
+                    value={param.value}
+                    onChange={(e) => {
+                      const newParams = [...queryParams];
+                      newParams[idx].value = e.target.value;
+                      setQueryParams(newParams);
+                    }}
+                    placeholder="value"
+                    className="flex-1 px-2 py-1 text-xs border rounded"
+                  />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setQueryParams(queryParams.filter((_, i) => i !== idx));
+                    }}
+                    className="text-red-600 hover:text-red-800"
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Headers */}
         <div>
-          <label className="block text-xs text-gray-600 mb-1">请求头（JSON）</label>
-          <textarea
-            value={headersText}
-            onChange={(e) => setHeadersText(e.target.value)}
-            className="w-full h-20 text-xs p-2 border rounded font-mono"
-            placeholder='{"Authorization": "Bearer xxx"}'
-          />
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-xs text-gray-600">请求头</label>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setHeaderParams([...headerParams, { key: '', value: '' }]);
+              }}
+              className="text-xs text-blue-600 hover:text-blue-800"
+            >
+              + 添加
+            </button>
+          </div>
+          <div className="space-y-1 max-h-32 overflow-y-auto border rounded p-2 bg-gray-50">
+            {headerParams.map((param, idx) => (
+              <div key={idx} className="flex items-center space-x-2">
+                <input
+                  type="text"
+                  value={param.key}
+                  onChange={(e) => {
+                    const newParams = [...headerParams];
+                    newParams[idx].key = e.target.value;
+                    setHeaderParams(newParams);
+                  }}
+                  placeholder="key"
+                  className="flex-1 px-2 py-1 text-xs border rounded"
+                />
+                <input
+                  type="text"
+                  value={param.value}
+                  onChange={(e) => {
+                    const newParams = [...headerParams];
+                    newParams[idx].value = e.target.value;
+                    setHeaderParams(newParams);
+                  }}
+                  placeholder="value"
+                  className="flex-1 px-2 py-1 text-xs border rounded"
+                />
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setHeaderParams(headerParams.filter((_, i) => i !== idx));
+                  }}
+                  className="text-red-600 hover:text-red-800"
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
-        <div>
-          <label className="block text-xs text-gray-600 mb-1">请求体（JSON，可为空）</label>
-          <textarea
-            value={bodyText}
-            onChange={(e) => setBodyText(e.target.value)}
-            className="w-full h-28 text-xs p-2 border rounded font-mono"
-            placeholder='{"key": "value"}'
-          />
-        </div>
+
+        {/* Body - JSON 格式 */}
+        {bodyType === 'json' && (
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">请求体（JSON）</label>
+            <JsonEditor
+              value={bodyJsonText}
+              onChange={setBodyJsonText}
+              placeholder='{"key": "value"}'
+              instanceId="replay-json-body"
+            />
+          </div>
+        )}
+
+        {/* Body - Form 格式 */}
+        {bodyType === 'form' && (
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs text-gray-600">请求体（Form Data）</label>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setBodyFormParams([...bodyFormParams, { key: '', value: '' }]);
+                }}
+                className="text-xs text-blue-600 hover:text-blue-800"
+              >
+                + 添加
+              </button>
+            </div>
+            <div className="space-y-1 max-h-32 overflow-y-auto border rounded p-2 bg-gray-50">
+              {bodyFormParams.map((param, idx) => (
+                <div key={idx} className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    value={param.key}
+                    onChange={(e) => {
+                      const newParams = [...bodyFormParams];
+                      newParams[idx].key = e.target.value;
+                      setBodyFormParams(newParams);
+                    }}
+                    placeholder="key"
+                    className="flex-1 px-2 py-1 text-xs border rounded"
+                  />
+                  <input
+                    type="text"
+                    value={param.value}
+                    onChange={(e) => {
+                      const newParams = [...bodyFormParams];
+                      newParams[idx].value = e.target.value;
+                      setBodyFormParams(newParams);
+                    }}
+                    placeholder="value"
+                    className="flex-1 px-2 py-1 text-xs border rounded"
+                  />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setBodyFormParams(bodyFormParams.filter((_, i) => i !== idx));
+                    }}
+                    className="text-red-600 hover:text-red-800"
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Body - Raw 格式 */}
+        {bodyType === 'raw' && (
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">请求体（Raw）</label>
+            <textarea
+              value={bodyRawText}
+              onChange={(e) => setBodyRawText(e.target.value)}
+              className="w-full h-28 text-xs p-2 border rounded font-mono"
+              placeholder="Raw body content"
+            />
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <button
             onClick={(e) => { e.stopPropagation(); doReplay(); }}
@@ -1115,49 +1346,31 @@ const InlineReplay: React.FC<{
               </div>
             </details>
             <div>
-              <div className="text-xs text-gray-700 mb-1">响应片段（最多 32KB）</div>
-              {(() => {
-                try {
-                  const json = JSON.parse(result.bodySnippet as any);
-                  return (
-                    <div className="text-xs bg-gray-50 p-2 rounded">
-                      {renderJson(json)}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigator.clipboard
-                            .writeText(JSON.stringify(json, null, 2))
-                            .then(() => onCopy('响应JSON'))
-                            .catch(() => { });
-                        }}
-                        className="mt-2 px-2 py-1 bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors"
-                      >
-                        复制响应JSON
-                      </button>
-                    </div>
-                  );
-                } catch {
-                  return (
-                    <div>
-                      <pre className="text-xs text-gray-600 whitespace-pre-wrap break-words bg-gray-50 p-2 rounded">
-                        {result.bodySnippet}
-                      </pre>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigator.clipboard
-                            .writeText(String(result.bodySnippet ?? ''))
-                            .then(() => onCopy('响应原文'))
-                            .catch(() => { });
-                        }}
-                        className="mt-2 px-2 py-1 bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors"
-                      >
-                        复制响应原文
-                      </button>
-                    </div>
-                  );
-                }
-              })()}
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-xs text-gray-700">响应片段（最多 32KB）</div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const text = typeof result.bodySnippet === 'string' 
+                      ? result.bodySnippet 
+                      : JSON.stringify(result.bodySnippet, null, 2);
+                    navigator.clipboard
+                      .writeText(text)
+                      .then(() => onCopy('响应体'))
+                      .catch(() => { });
+                  }}
+                  className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 transition-colors"
+                >
+                  复制响应体
+                </button>
+              </div>
+              <JsonViewer
+                value={typeof result.bodySnippet === 'string' 
+                  ? result.bodySnippet 
+                  : JSON.stringify(result.bodySnippet, null, 2)}
+                placeholder="无响应体"
+                instanceId={`replay-response-${record.id}`}
+              />
             </div>
 
           </div>

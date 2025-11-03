@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "API Recorder",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Record HTTP requests and export as OpenAPI specification",
   "permissions": [
     "webRequest",
