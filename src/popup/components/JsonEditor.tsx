@@ -45,6 +45,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, placeholder, c
   const [replaceText, setReplaceText] = useState('');
   const [searchResults, setSearchResults] = useState<Array<{ path: string; key: string; value: any; matchType: 'key' | 'value' }>>([]);
   const [currentResultIndex, setCurrentResultIndex] = useState(0);
+  const [focusedPath, setFocusedPath] = useState<string | null>(null);
 
   const isInternalUpdateRef = React.useRef(false);
 
@@ -859,10 +860,12 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, placeholder, c
                     key={idx}
                     data-instance={instanceId}
                     data-path={node.path}
-                    className={`flex items-center py-1 px-1 rounded group ${
+                    className={`flex items-center py-1 px-1 rounded ${
                       isCurrentMatch ? 'bg-yellow-100 border-l-2 border-yellow-500' : 'hover:bg-gray-50'
                     }`}
                     style={{ paddingLeft: `${node.level * 16 + 4}px` }}
+                    onMouseEnter={() => setFocusedPath(node.path)}
+                    onMouseLeave={() => setFocusedPath(null)}
                   >
                   {/* 展开/折叠按钮 */}
                   {(node.type === 'object' || node.type === 'array') ? (
@@ -917,7 +920,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, placeholder, c
 
                   {/* Value - 可编辑 */}
                   {node.type === 'object' || node.type === 'array' ? (
-                    <div className="flex items-center flex-1 group">
+                    <div className="flex items-center flex-1">
                       <span 
                         className="text-gray-500 cursor-pointer hover:bg-gray-50 px-1 rounded"
                         onClick={() => toggleExpand(node.path)}
@@ -937,7 +940,9 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, placeholder, c
                       {/* 编辑按钮 */}
                       <button
                         onClick={() => startEditBoth(node)}
-                        className="ml-2 opacity-0 group-hover:opacity-100 text-blue-600 hover:text-blue-800"
+                        className={`ml-2 transition-opacity text-blue-600 hover:text-blue-800 ${
+                          focusedPath === node.path ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                        }`}
                         title="编辑"
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -953,7 +958,9 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, placeholder, c
                             addItemToArray(node.path);
                           }
                         }}
-                        className="ml-1 opacity-0 group-hover:opacity-100 text-green-600 hover:text-green-800"
+                        className={`ml-1 transition-opacity text-green-600 hover:text-green-800 ${
+                          focusedPath === node.path ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                        }`}
                         title={node.type === 'object' ? '添加字段' : '添加元素'}
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -963,7 +970,9 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, placeholder, c
                       {/* 删除按钮 */}
                       <button
                         onClick={() => showDeleteConfirm(node.path, node.key)}
-                        className="ml-1 opacity-0 group-hover:opacity-100 text-red-600 hover:text-red-800"
+                        className={`ml-1 transition-opacity text-red-600 hover:text-red-800 ${
+                          focusedPath === node.path ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                        }`}
                         title="删除"
                       >
                         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -1004,7 +1013,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, placeholder, c
                       </button>
                     </div>
                   ) : (
-                    <div className="flex items-center flex-1 group">
+                    <div className="flex items-center flex-1">
                       <span 
                         className={`${getValueColor(node.type)} cursor-pointer hover:bg-blue-50 px-1 rounded`}
                         onClick={() => startEdit(node)}
@@ -1014,7 +1023,9 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, placeholder, c
                       </span>
                       <button
                         onClick={() => startEditBoth(node)}
-                        className="ml-2 opacity-0 group-hover:opacity-100 text-blue-600 hover:text-blue-800"
+                        className={`ml-2 transition-opacity text-blue-600 hover:text-blue-800 ${
+                          focusedPath === node.path ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                        }`}
                         title="编辑"
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1023,7 +1034,9 @@ const JsonEditor: React.FC<JsonEditorProps> = ({ value, onChange, placeholder, c
                       </button>
                       <button
                         onClick={() => showDeleteConfirm(node.path, node.key)}
-                        className="ml-1 opacity-0 group-hover:opacity-100 text-red-600 hover:text-red-800"
+                        className={`ml-1 transition-opacity text-red-600 hover:text-red-800 ${
+                          focusedPath === node.path ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                        }`}
                         title="删除"
                       >
                         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">

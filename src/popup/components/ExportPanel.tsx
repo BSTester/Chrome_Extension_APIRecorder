@@ -163,11 +163,7 @@ const ExportPanel: React.FC<ExportPanelProps> = ({
                   </span>
                 ))}
               </div>
-              {detectedDomains.length > 1 && (
-                <div className="mt-2 text-xs text-blue-600">
-                  检测到多个域名，将生成 {detectedDomains.length} 个独立的OpenAPI文件
-                </div>
-              )}
+
             </div>
           </div>
           
