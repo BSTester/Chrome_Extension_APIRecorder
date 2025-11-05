@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "build:ext": "npm run build && powershell -Command \"Copy-Item public\\manifest.json dist\\ -Force; robocopy public\\icons dist\\icons /E /NP /NFL /NDL; if ($LASTEXITCODE -le 1) { exit 0 }\"",
+    "pack": "npm run build:ext && powershell -Command \"Compress-Archive -Path dist\\* -DestinationPath APIRecorder-v1.0.4.zip -Force\"",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
