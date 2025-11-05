@@ -1,7 +1,7 @@
 {
   "name": "chrome-ext-openapi",
-  "version": "1.0.2",
-  "description": "Chrome extension for recording HTTP requests and exporting as OpenAPI specification",
+  "version": "1.0.4",
+  "description": "录制HTTP请求并导出为OpenAPI规范的Chrome扩展，支持接口回放和同步到RunnerGO测试平台",
   "type": "module",
   "scripts": {
     "dev": "vite",

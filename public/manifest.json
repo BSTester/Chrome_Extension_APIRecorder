@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "API Recorder",
-  "version": "1.0.2",
-  "description": "Record HTTP requests and export as OpenAPI specification",
+  "version": "1.0.4",
+  "description": "录制HTTP请求并导出为OpenAPI规范，支持接口回放和同步到RunnerGO测试平台",
   "permissions": [
     "webRequest",
     "storage",

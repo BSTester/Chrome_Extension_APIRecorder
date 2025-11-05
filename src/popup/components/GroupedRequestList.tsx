@@ -46,6 +46,8 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
   // 新增：记录标题编辑状态
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [editingRecordTitle, setEditingRecordTitle] = useState('');
+  // 新增：跟踪鼠标悬停的记录ID
+  const [hoveredRecordId, setHoveredRecordId] = useState<string | null>(null);
 
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{
     isOpen: boolean;
@@ -598,7 +600,12 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
                   ) : (
                     <div className="divide-y divide-gray-100">
                       {section.records.map((record) => (
-                        <div key={record.id} className={`px-4 py-2 transition-colors border-l-2 ${selectedRecords.has(record.id) ? 'bg-blue-50 border-blue-400' : 'hover:bg-gray-50 border-transparent hover:border-blue-200'}`}>
+                        <div
+                          key={record.id}
+                          className={`px-4 py-2 transition-colors border-l-2 ${selectedRecords.has(record.id) ? 'bg-blue-50 border-blue-400' : 'hover:bg-gray-50 border-transparent hover:border-blue-200'}`}
+                          onMouseEnter={() => setHoveredRecordId(record.id)}
+                          onMouseLeave={() => setHoveredRecordId(null)}
+                        >
                           <div
                             className="flex items-center justify-between cursor-pointer"
                             onClick={() => toggleExpanded(record.id)}
@@ -715,20 +722,22 @@ const GroupedRequestList: React.FC<GroupedRequestListProps> = ({
                               <span className={`font-medium ${getStatusClass(record.responseStatus)}`}>{record.responseStatus}</span>
                               <span>{formatResponseTime(record.responseTime)}</span>
                               <span>{formatTime(record.timestamp)}</span>
-                              <button
-                                type="button"
-                                className="flex items-center px-2 py-1 text-xs text-red-600 hover:text-red-800 transition-colors opacity-0 group-hover:opacity-100"
-                                onClick={(e) => openRecordDelete(record.id, e)}
-                                title="删除接口"
-                              >
-                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <polyline points="3 6 5 6 21 6" />
-                                  <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
-                                  <path d="M10 11v6" />
-                                  <path d="M14 11v6" />
-                                  <path d="M15 6V4a2 2 0 00-2-2h-2a2 2 0 00-2 2v2" />
-                                </svg>
-                              </button>
+                              {hoveredRecordId === record.id && (
+                                <button
+                                  type="button"
+                                  className="flex items-center px-2 py-1 text-xs text-red-600 hover:text-red-800 transition-colors"
+                                  onClick={(e) => openRecordDelete(record.id, e)}
+                                  title="删除接口"
+                                >
+                                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="3 6 5 6 21 6" />
+                                    <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                                    <path d="M10 11v6" />
+                                    <path d="M14 11v6" />
+                                    <path d="M15 6V4a2 2 0 00-2-2h-2a2 2 0 00-2 2v2" />
+                                  </svg>
+                                </button>
+                              )}
                               <svg className={`w-3 h-3 transition-transform ${expandedRecord === record.id ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                               </svg>
@@ -1351,8 +1360,8 @@ const InlineReplay: React.FC<{
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    const text = typeof result.bodySnippet === 'string' 
-                      ? result.bodySnippet 
+                    const text = typeof result.bodySnippet === 'string'
+                      ? result.bodySnippet
                       : JSON.stringify(result.bodySnippet, null, 2);
                     navigator.clipboard
                       .writeText(text)
@@ -1365,8 +1374,8 @@ const InlineReplay: React.FC<{
                 </button>
               </div>
               <JsonViewer
-                value={typeof result.bodySnippet === 'string' 
-                  ? result.bodySnippet 
+                value={typeof result.bodySnippet === 'string'
+                  ? result.bodySnippet
                   : JSON.stringify(result.bodySnippet, null, 2)}
                 placeholder="无响应体"
                 instanceId={`replay-response-${record.id}`}
